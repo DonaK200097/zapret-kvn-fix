@@ -337,26 +337,26 @@ class AppController(QObject):
 
         if tun:
             self._log(f"[tun] attempting TUN connect, admin={_is_admin()}")
+            self.status.emit("info", f"Starting VPN: {node.name}...")
+
             if not _is_admin():
                 self._log("[tun] NOT admin — aborting")
-                self.status.emit("error", "TUN mode requires running as Administrator.")
+                self.status.emit("error", "TUN mode requires Administrator. Run the app as Administrator.")
                 return False
 
             # TUN doesn't use system proxy — disable if it was left on
             if self.proxy.is_enabled():
                 self.proxy.disable(restore_previous=True)
 
-            # Start xray with SOCKS inbound for tun2socks
+            # Start xray
+            self.status.emit("info", "Starting xray core...")
             xray_cfg = build_xray_config(node, self.state.routing, self.state.settings)
-            # Suppress per-connection logging in TUN mode (xhttp creates hundreds)
             xray_cfg["log"] = {"loglevel": "error"}
-            # Remove HTTP inbound (keep SOCKS and API)
             socks_port = self.state.settings.socks_port
             xray_cfg["inbounds"] = [
                 ib for ib in xray_cfg.get("inbounds", [])
-                if ib.get("protocol") != "http"
+                if ib.get("protocol") not in ("",)  # keep all inbounds including HTTP
             ]
-            # Block LAN/link-local/broadcast traffic that tun2socks floods
             routing = xray_cfg.setdefault("routing", {})
             rules = routing.setdefault("rules", [])
             rules.insert(0, {
@@ -367,15 +367,17 @@ class AppController(QObject):
             xray_ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
             if not xray_ok:
                 self._log("[tun] xray start failed")
+                self.status.emit("error", "Failed to start xray core. Check logs for details.")
                 return False
+            self.status.emit("info", "Xray started. Creating TUN adapter...")
 
-            # Start tun2socks pointing to xray SOCKS
-            self.status.emit("info", "Creating TUN adapter...")
+            # Start tun2socks
             self._log(f"[tun] starting tun2socks -> SOCKS 127.0.0.1:{socks_port}")
             tun_ok = self.tun2socks.start(socks_port, server_ip=node.server)
             self._log(f"[tun] tun2socks start result: {tun_ok}")
             if not tun_ok:
                 self.xray.stop()
+                self.status.emit("error", "Failed to create TUN adapter. Check if wintun.dll exists in core/.")
                 return False
             self._active_core = "tun2socks"
         else:
@@ -399,6 +401,8 @@ class AppController(QObject):
 
     def disconnect_current(self, disable_proxy: bool = True, emit_status: bool = True) -> bool:
         if self._active_core == "tun2socks":
+            if emit_status:
+                self.status.emit("info", "Stopping VPN...")
             stopped = self.tun2socks.stop()
             if self.xray.is_running:
                 self.xray.stop()
@@ -731,12 +735,13 @@ class AppController(QObject):
         if not node:
             return
         self._log(f"[hot-swap] {reason} — restarting xray only, TUN stays up")
+        self.status.emit("info", f"Switching to {node.name}...")
         self.xray.stop()
         xray_cfg = build_xray_config(node, self.state.routing, self.state.settings)
         xray_cfg["log"] = {"loglevel": "error"}
         xray_cfg["inbounds"] = [
             ib for ib in xray_cfg.get("inbounds", [])
-            if ib.get("protocol") != "http"
+            if ib.get("protocol") not in ("",)  # keep all inbounds
         ]
         routing = xray_cfg.setdefault("routing", {})
         rules = routing.setdefault("rules", [])

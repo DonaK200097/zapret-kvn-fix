@@ -67,12 +67,22 @@ All traffic → TUN (tun2socks/wintun) → xray SOCKS:10808 → proxy server
 - `core/` — xray, sing-box, tun2socks, wintun.dll binaries
 - `build.py` — PyInstaller build script with data/ backup/restore
 
+## Build for dist3 (dev)
+
+```bash
+bash build_dist3.sh
+```
+
+This backs up data/ before build and restores after — preserving nodes and settings.
+
 ## Key conventions
 
+- **Always use subagents (5+)** for codebase exploration, bug investigation, and research. Never solo-explore large codebases.
 - Use stock `qfluentwidgets` components over custom card classes
 - Keep page surfaces transparent for Windows 11 Mica effect
 - Node switching uses deferred `QTimer.singleShot(0, ...)` to avoid UI freezes
 - In TUN mode, use hot-swap (restart xray only) instead of full reconnect
 - System proxy always disabled on exit (atexit handler in main.py)
-- Use subagents (5+) for thorough codebase analysis
+- Show status notifications at every TUN stage (starting, xray ok, TUN creating, connected, error)
+- Throttle xray "accepted" logs in TUN mode to prevent UI freeze
 - venv is at `.venv/`, created by `setup.bat`

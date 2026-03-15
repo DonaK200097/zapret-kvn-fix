@@ -17,6 +17,7 @@ TUN_DEVICE_NAME = "XrayFluentTUN"
 TUN_GW = "172.19.0.1"
 TUN_ADDR = "172.19.0.2"
 TUN_MASK = "255.255.255.252"
+TUN_GW6 = "fd00::1"
 TUN_CIDR = "172.19.0.1/30"
 
 
@@ -173,12 +174,22 @@ class Tun2SocksManager(QObject):
             cmds = [
                 # Route proxy server IP through original gateway (prevent loop)
                 ["route", "add", self._server_ip, "mask", "255.255.255.255", orig_gw, "metric", "1"],
+                # Keep gateway/LAN reachable for DHCP, ARP, local network
+                ["route", "add", orig_gw, "mask", "255.255.255.255", orig_gw, "metric", "1"],
+                ["route", "add", "192.168.0.0", "mask", "255.255.0.0", orig_gw, "metric", "1"],
+                ["route", "add", "10.0.0.0", "mask", "255.0.0.0", orig_gw, "metric", "1"],
+                ["route", "add", "172.16.0.0", "mask", "255.240.0.0", orig_gw, "metric", "1"],
+                ["route", "add", "169.254.0.0", "mask", "255.255.0.0", orig_gw, "metric", "1"],
             ]
             # Use netsh to add TUN routes — this correctly sets interface metric
             if tun_idx:
                 cmds += [
+                    # IPv4 default via TUN
                     ["netsh", "interface", "ipv4", "add", "route", "0.0.0.0/1", f"interface={tun_idx}", f"nexthop={TUN_GW}", "metric=0"],
                     ["netsh", "interface", "ipv4", "add", "route", "128.0.0.0/1", f"interface={tun_idx}", f"nexthop={TUN_GW}", "metric=0"],
+                    # Block IPv6 globally while TUN is active — tun2socks only handles IPv4
+                    # This forces all apps to use IPv4 which goes through TUN
+                    ["netsh", "interface", "ipv6", "add", "route", "::/0", f"interface=1", "metric=1"],
                 ]
             else:
                 cmds += [
@@ -199,10 +210,14 @@ class Tun2SocksManager(QObject):
             cmds = [
                 ["route", "delete", "0.0.0.0", "mask", "128.0.0.0", TUN_GW],
                 ["route", "delete", "128.0.0.0", "mask", "128.0.0.0", TUN_GW],
-                ["netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/1", f"interface={self._tun_idx}"] if hasattr(self, '_tun_idx') and self._tun_idx else [],
-                ["netsh", "interface", "ipv4", "delete", "route", "128.0.0.0/1", f"interface={self._tun_idx}"] if hasattr(self, '_tun_idx') and self._tun_idx else [],
+                # Restore IPv6
+                ["netsh", "interface", "ipv6", "delete", "route", "::/0", "interface=1"],
             ]
-            cmds = [c for c in cmds if c]  # remove empty
+            if hasattr(self, '_tun_idx') and self._tun_idx:
+                cmds += [
+                    ["netsh", "interface", "ipv4", "delete", "route", "0.0.0.0/1", f"interface={self._tun_idx}"],
+                    ["netsh", "interface", "ipv4", "delete", "route", "128.0.0.0/1", f"interface={self._tun_idx}"],
+                ]
             if self._server_ip:
                 cmds.append(["route", "delete", self._server_ip])
             for cmd in cmds:
