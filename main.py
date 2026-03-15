@@ -1,0 +1,293 @@
+from __future__ import annotations
+
+import argparse
+import atexit
+import faulthandler
+import logging
+from logging.handlers import RotatingFileHandler
+import os
+from pathlib import Path
+import sys
+import threading
+
+
+STARTUP_LOG_NAME = "startup.log"
+SHOW_CONSOLE_ARG = "--show-console"
+SHOW_CONSOLE_ENV = "XRAY_FLUENT_SHOW_CONSOLE"
+
+
+class _TeeStream:
+    def __init__(self, *streams) -> None:
+        self._streams = [stream for stream in streams if stream is not None]
+
+    def write(self, data: str) -> int:
+        for stream in self._streams:
+            try:
+                stream.write(data)
+            except Exception:
+                pass
+        return len(data)
+
+    def flush(self) -> None:
+        for stream in self._streams:
+            try:
+                stream.flush()
+            except Exception:
+                pass
+
+    def isatty(self) -> bool:
+        return any(getattr(stream, "isatty", lambda: False)() for stream in self._streams)
+
+    @property
+    def encoding(self) -> str:
+        for stream in self._streams:
+            encoding = getattr(stream, "encoding", None)
+            if encoding:
+                return encoding
+        return "utf-8"
+
+
+def _get_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent
+
+
+BASE_DIR = _get_base_dir()
+STARTUP_LOG_DIR = BASE_DIR / "data" / "logs"
+STARTUP_LOG_PATH = STARTUP_LOG_DIR / STARTUP_LOG_NAME
+_bootstrap_logger = logging.getLogger("xray_fluent.bootstrap")
+_bootstrap_stream = None
+
+
+def _show_console_requested() -> bool:
+    if SHOW_CONSOLE_ARG in sys.argv[1:]:
+        return True
+    return os.environ.get(SHOW_CONSOLE_ENV, "").strip() == "1"
+
+
+def _setup_bootstrap_logging() -> None:
+    global _bootstrap_stream
+
+    STARTUP_LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+    if not _bootstrap_logger.handlers:
+        handler = RotatingFileHandler(
+            STARTUP_LOG_PATH,
+            maxBytes=1 * 1024 * 1024,
+            backupCount=2,
+            encoding="utf-8",
+        )
+        handler.setFormatter(logging.Formatter("%(asctime)s  %(levelname)s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
+        _bootstrap_logger.addHandler(handler)
+        _bootstrap_logger.setLevel(logging.DEBUG)
+        _bootstrap_logger.propagate = False
+
+    if _bootstrap_stream is None:
+        _bootstrap_stream = STARTUP_LOG_PATH.open("a", encoding="utf-8", buffering=1)
+        sys.stdout = _TeeStream(getattr(sys, "__stdout__", None), _bootstrap_stream)
+        sys.stderr = _TeeStream(getattr(sys, "__stderr__", None), _bootstrap_stream)
+        try:
+            faulthandler.enable(_bootstrap_stream)
+        except Exception:
+            pass
+
+    _bootstrap_logger.info("----- startup begin -----")
+    _bootstrap_logger.info("argv=%s", sys.argv)
+    _bootstrap_logger.info("frozen=%s executable=%s", getattr(sys, "frozen", False), sys.executable)
+    if sys.platform == "win32":
+        try:
+            version = sys.getwindowsversion()
+            _bootstrap_logger.info(
+                "windows_version major=%s minor=%s build=%s platform=%s service_pack=%s",
+                version.major,
+                version.minor,
+                version.build,
+                version.platform,
+                version.service_pack,
+            )
+        except Exception:
+            _bootstrap_logger.exception("Failed to query Windows version")
+
+
+def _fatal_error_message() -> str:
+    return f"Xray Fluent failed to start.\n\nDetails were written to:\n{STARTUP_LOG_PATH}"
+
+
+def _show_fatal_message_box() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        ctypes.windll.user32.MessageBoxW(None, _fatal_error_message(), "Xray Fluent", 0x10)
+    except Exception:
+        pass
+
+
+def _log_unhandled_exception(exc_type, exc_value, exc_traceback) -> None:
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    _bootstrap_logger.exception("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
+    _show_fatal_message_box()
+
+
+def _install_exception_hooks() -> None:
+    sys.excepthook = _log_unhandled_exception
+    threading.excepthook = lambda args: _log_unhandled_exception(
+        args.exc_type,
+        args.exc_value,
+        args.exc_traceback,
+    )
+    atexit.register(_disable_system_proxy_on_exit)
+    atexit.register(_log_process_exit)
+
+
+def _disable_system_proxy_on_exit() -> None:
+    """Safety net: always disable system proxy and clean up TUN adapter."""
+    if sys.platform != "win32":
+        return
+    # Disable system proxy
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                            r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+                            0, winreg.KEY_READ) as key:
+            enabled, _ = winreg.QueryValueEx(key, "ProxyEnable")
+        if int(enabled) == 1:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
+                                r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
+                                0, winreg.KEY_SET_VALUE) as key:
+                winreg.SetValueEx(key, "ProxyEnable", 0, winreg.REG_DWORD, 0)
+            _bootstrap_logger.info("System proxy disabled on exit (safety)")
+    except Exception:
+        pass
+    # Kill orphaned sing-box/xray and disable TUN adapter
+    try:
+        import subprocess as _sp
+        _flags = 0x08000000
+        _sp.run(["taskkill", "/F", "/IM", "sing-box.exe"], capture_output=True, timeout=5, creationflags=_flags)
+        _sp.run(["taskkill", "/F", "/IM", "xray.exe"], capture_output=True, timeout=5, creationflags=_flags)
+        r = _sp.run(["netsh", "interface", "show", "interface"], capture_output=True, text=True, timeout=5, creationflags=_flags)
+        if "XrayFluentTUN" in (r.stdout or ""):
+            _sp.run(["netsh", "interface", "set", "interface", "XrayFluentTUN", "admin=disable"], capture_output=True, timeout=5, creationflags=_flags)
+            _bootstrap_logger.info("TUN adapter disabled on exit (safety)")
+    except Exception:
+        pass
+
+
+def _log_process_exit() -> None:
+    _bootstrap_logger.info("----- process exit -----")
+
+
+def _hide_console_if_needed() -> None:
+    if sys.platform != "win32" or not getattr(sys, "frozen", False):
+        return
+    if _show_console_requested():
+        _bootstrap_logger.info("Console kept visible for debugging")
+        return
+    try:
+        import ctypes
+
+        console = ctypes.windll.kernel32.GetConsoleWindow()
+        if console:
+            ctypes.windll.user32.ShowWindow(console, 0)
+            _bootstrap_logger.debug("Console window hidden")
+    except Exception:
+        _bootstrap_logger.exception("Failed to hide console window")
+
+
+def _enforce_frozen() -> None:
+    if not getattr(sys, "frozen", False):
+        raise SystemExit(
+            "ERROR: Direct execution is not supported.\n"
+            "Build the app first:  python build.py\n"
+            "Then run:             dist\\XrayFluent\\XrayFluent.exe"
+        )
+
+
+def main() -> int:
+    _setup_bootstrap_logging()
+    _install_exception_hooks()
+    _enforce_frozen()
+    _hide_console_if_needed()
+
+    parser = argparse.ArgumentParser(description="Xray Fluent GUI")
+    parser.add_argument("--minimized", action="store_true", help="start in tray")
+    parser.add_argument(SHOW_CONSOLE_ARG, action="store_true", help="keep console window visible for debugging")
+    args = parser.parse_args()
+
+    _bootstrap_logger.info("parsed arguments: minimized=%s show_console=%s", args.minimized, args.show_console)
+    _bootstrap_logger.info("Importing Qt and application modules")
+
+    import qfluentwidgets  # noqa: F401
+    from PyQt6.QtCore import QSize
+    from PyQt6.QtGui import QIcon
+    from PyQt6.QtWidgets import QApplication
+    from qfluentwidgets import SplashScreen
+    from qframelesswindow import StandardTitleBar
+
+    from xray_fluent.constants import APP_NAME
+    from xray_fluent.ui.main_window import MainWindow
+
+    _bootstrap_logger.info("Creating QApplication")
+    app = QApplication(sys.argv)
+    app.setApplicationName(APP_NAME)
+    app.setQuitOnLastWindowClosed(False)
+
+    start_hidden = args.minimized
+
+    _bootstrap_logger.info("Creating main window shell")
+    window = MainWindow(force_minimized=start_hidden, defer_init=not start_hidden)
+
+    splash = None
+    if not start_hidden:
+        _bootstrap_logger.info("Showing stock splash screen")
+        icon = QIcon(":/qfluentwidgets/images/logo.png")
+        splash = SplashScreen(icon, window)
+        title_bar = StandardTitleBar(splash)
+        title_bar.setIcon(window.windowIcon())
+        title_bar.setTitle(window.windowTitle())
+        splash.setTitleBar(title_bar)
+        sz = splash.iconSize()
+        scale = max(1, window.logicalDpiX() // 96)
+        splash.setIconSize(QSize(sz.width() * scale, sz.height() * scale))
+        window.show()
+        app.processEvents()
+        _bootstrap_logger.info("Initializing main window behind splash")
+        window.initialize()
+        app.processEvents()
+        splash.finish()
+    else:
+        _bootstrap_logger.info("Creating main window")
+        window.initialize()
+
+    mica_enabled = getattr(window, "isMicaEffectEnabled", lambda: False)()
+    _bootstrap_logger.info("main window created: mica_enabled=%s", mica_enabled)
+
+    if window.controller.state.settings.start_minimized and not args.minimized:
+        start_hidden = True
+
+    if start_hidden:
+        _bootstrap_logger.info("Starting minimized to tray")
+        window.hide()
+    elif splash is None:
+        _bootstrap_logger.info("Showing main window")
+        window.show()
+
+    _bootstrap_logger.info("Entering Qt event loop")
+    exit_code = app.exec()
+    _bootstrap_logger.info("Qt event loop exited with code %s", exit_code)
+    return exit_code
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except Exception:
+        _bootstrap_logger.exception("Fatal startup error")
+        _show_fatal_message_box()
+        raise SystemExit(1)
