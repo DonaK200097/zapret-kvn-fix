@@ -1,0 +1,124 @@
+name: Build & Release
+
+on:
+  push:
+    branches: [master, main]
+    tags: ["v*"]
+  pull_request:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download core binaries
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path core | Out-Null
+
+          # ── Xray-core (includes xray.exe, geoip.dat, geosite.dat) ──
+          Write-Host "Downloading Xray-core..."
+          $xrayRelease = Invoke-RestMethod "https://api.github.com/repos/XTLS/Xray-core/releases/latest"
+          $xrayAsset = $xrayRelease.assets | Where-Object { $_.name -match "Xray-windows-64\.zip$" }
+          Invoke-WebRequest $xrayAsset.browser_download_url -OutFile xray.zip
+          Expand-Archive xray.zip -DestinationPath _xray -Force
+          Copy-Item _xray/xray.exe core/
+          Copy-Item _xray/geoip.dat core/
+          Copy-Item _xray/geosite.dat core/
+          Copy-Item _xray/LICENSE core/
+          Remove-Item -Recurse _xray, xray.zip
+
+          # ── tun2socks ──
+          Write-Host "Downloading tun2socks..."
+          $tunRelease = Invoke-RestMethod "https://api.github.com/repos/xjasonlyu/tun2socks/releases/latest"
+          $tunAsset = $tunRelease.assets | Where-Object { $_.name -match "windows-amd64\.zip$" }
+          Invoke-WebRequest $tunAsset.browser_download_url -OutFile tun2socks.zip
+          Expand-Archive tun2socks.zip -DestinationPath _tun -Force
+          Get-ChildItem _tun -Recurse -Filter "*.exe" | ForEach-Object { Copy-Item $_.FullName core/tun2socks.exe }
+          Remove-Item -Recurse _tun, tun2socks.zip
+
+          # ── wintun ──
+          Write-Host "Downloading wintun..."
+          Invoke-WebRequest "https://www.wintun.net/builds/wintun-0.14.1.zip" -OutFile wintun.zip
+          Expand-Archive wintun.zip -DestinationPath _wintun -Force
+          Copy-Item _wintun/wintun/bin/amd64/wintun.dll core/
+          Remove-Item -Recurse _wintun, wintun.zip
+
+          # ── sing-box ──
+          Write-Host "Downloading sing-box..."
+          $sbRelease = Invoke-RestMethod "https://api.github.com/repos/SagerNet/sing-box/releases/latest"
+          $sbAsset = $sbRelease.assets | Where-Object { $_.name -match "windows-amd64\.zip$" -and $_.name -notmatch "\.sig" }
+          Invoke-WebRequest $sbAsset.browser_download_url -OutFile singbox.zip
+          Expand-Archive singbox.zip -DestinationPath _sb -Force
+          Get-ChildItem _sb -Recurse -Filter "sing-box.exe" | ForEach-Object { Copy-Item $_.FullName core/sing-box.exe }
+          Remove-Item -Recurse _sb, singbox.zip
+
+          Write-Host "Core binaries ready:"
+          Get-ChildItem core/
+
+      - name: Build with PyInstaller
+        shell: pwsh
+        run: |
+          python -m PyInstaller main.py `
+            --name ZapretKVN `
+            --noconfirm --clean --console --onedir `
+            --uac-admin `
+            --manifest uac_admin.manifest `
+            --hidden-import win32comext `
+            --hidden-import win32comext.shell `
+            --hidden-import win32comext.shell.shellcon
+
+          # Copy core/ into dist
+          Copy-Item -Recurse core dist/ZapretKVN/core
+
+          Write-Host "Build complete:"
+          Get-ChildItem dist/ZapretKVN/ | Format-Table Name, Length
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ZapretKVN-portable
+          path: dist/ZapretKVN/
+
+      # ── Release (only on tag push v*) ──
+
+      - name: Create release archives
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}"
+          cd dist/ZapretKVN
+
+          # ZIP
+          Compress-Archive -Path * -DestinationPath "../ZapretKVN-${version}-windows-x64.zip"
+
+          # 7z
+          7z a "../ZapretKVN-${version}-windows-x64.7z" * -mx9
+
+          cd ..
+          Write-Host "Release archives:"
+          Get-ChildItem *.zip, *.7z | Format-Table Name, Length
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "zapret kvn ${{ github.ref_name }}"
+          generate_release_notes: true
+          files: |
+            dist/ZapretKVN-*-windows-x64.zip
+            dist/ZapretKVN-*-windows-x64.7z
