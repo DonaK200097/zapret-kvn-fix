@@ -151,6 +151,8 @@ class AppSettings:
     window_height: int = 720
     window_x: int = -1
     window_y: int = -1
+    zapret_preset: str = ""
+    zapret_autostart: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -178,6 +180,8 @@ class AppSettings:
             "window_height": self.window_height,
             "window_x": self.window_x,
             "window_y": self.window_y,
+            "zapret_preset": self.zapret_preset,
+            "zapret_autostart": self.zapret_autostart,
         }
 
     @staticmethod
@@ -207,6 +211,8 @@ class AppSettings:
             window_height=int(data.get("window_height") or 720),
             window_x=int(data.get("window_x", -1)),
             window_y=int(data.get("window_y", -1)),
+            zapret_preset=str(data.get("zapret_preset") or ""),
+            zapret_autostart=bool(data.get("zapret_autostart", False)),
         )
 
 

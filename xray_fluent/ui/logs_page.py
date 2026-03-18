@@ -18,20 +18,20 @@ class LogsPage(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
 
-        root.addWidget(SubtitleLabel("Logs & Diagnostics", self))
+        root.addWidget(SubtitleLabel("Логи и диагностика", self))
 
         toolbar = QHBoxLayout()
         self.search = SearchLineEdit(self)
-        self.search.setPlaceholderText("Filter logs")
-        self.clear_btn = PushButton("Clear view", self)
-        self.export_btn = PrimaryPushButton("Export diagnostics", self)
+        self.search.setPlaceholderText("Фильтр логов")
+        self.clear_btn = PushButton("Очистить", self)
+        self.export_btn = PrimaryPushButton("Экспорт диагностики", self)
 
         toolbar.addWidget(self.search, 1)
         toolbar.addWidget(self.clear_btn)
         toolbar.addWidget(self.export_btn)
         root.addLayout(toolbar)
 
-        root.addWidget(BodyLabel("Runtime logs", self))
+        root.addWidget(BodyLabel("Логи работы", self))
         self.log_edit = PlainTextEdit(self)
         self.log_edit.setReadOnly(True)
         root.addWidget(self.log_edit, 1)

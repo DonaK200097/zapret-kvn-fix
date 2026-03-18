@@ -30,7 +30,7 @@ class UpdatesPage(QWidget):
         root.setContentsMargins(36, 28, 36, 28)
         root.setSpacing(20)
 
-        title = SubtitleLabel("Updates", self)
+        title = SubtitleLabel("Обновления", self)
         root.addWidget(title)
 
         # ── App version info ──
@@ -40,7 +40,7 @@ class UpdatesPage(QWidget):
         app_title.setStyleSheet("font-weight: bold; font-size: 16px;")
         app_box.addWidget(app_title)
 
-        self._app_version_label = BodyLabel(f"Current version: v{APP_VERSION}", self)
+        self._app_version_label = BodyLabel(f"Текущая версия: v{APP_VERSION}", self)
         app_box.addWidget(self._app_version_label)
 
         self._app_status = CaptionLabel("", self)
@@ -61,8 +61,8 @@ class UpdatesPage(QWidget):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(10)
-        self.check_app_btn = PrimaryPushButton(FIF.SYNC, "Check for updates", self)
-        self.download_btn = PushButton(FIF.DOWNLOAD, "Download & Install", self)
+        self.check_app_btn = PrimaryPushButton(FIF.SYNC, "Проверить обновления", self)
+        self.download_btn = PushButton(FIF.DOWNLOAD, "Скачать и установить", self)
         self.download_btn.hide()
         btn_row.addWidget(self.check_app_btn)
         btn_row.addWidget(self.download_btn)
@@ -84,7 +84,7 @@ class UpdatesPage(QWidget):
         xray_title.setStyleSheet("font-weight: bold; font-size: 16px;")
         xray_box.addWidget(xray_title)
 
-        self._xray_version_label = BodyLabel("Version: loading...", self)
+        self._xray_version_label = BodyLabel("Версия: загрузка...", self)
         xray_box.addWidget(self._xray_version_label)
 
         self._xray_status = CaptionLabel("", self)
@@ -93,8 +93,8 @@ class UpdatesPage(QWidget):
 
         xray_btn_row = QHBoxLayout()
         xray_btn_row.setSpacing(10)
-        self.check_xray_btn = PushButton(FIF.SYNC, "Check Xray updates", self)
-        self.update_xray_btn = PrimaryPushButton(FIF.DOWNLOAD, "Update Xray core", self)
+        self.check_xray_btn = PushButton(FIF.SYNC, "Проверить обновления Xray", self)
+        self.update_xray_btn = PrimaryPushButton(FIF.DOWNLOAD, "Обновить Xray core", self)
         xray_btn_row.addWidget(self.check_xray_btn)
         xray_btn_row.addWidget(self.update_xray_btn)
         xray_btn_row.addStretch()
@@ -111,7 +111,7 @@ class UpdatesPage(QWidget):
     # ── Public API ──
 
     def set_xray_version(self, version: str) -> None:
-        self._xray_version_label.setText(f"Version: {version}" if version else "Version: not found")
+        self._xray_version_label.setText(f"Версия: {version}" if version else "Версия: не найдена")
 
     def set_app_status(self, text: str) -> None:
         self._app_status.setText(text)
@@ -124,13 +124,13 @@ class UpdatesPage(QWidget):
         self._app_spinner.show()
         self._app_spinner.start()
         self.check_app_btn.setEnabled(False)
-        self._app_status.setText("Checking for updates...")
+        self._app_status.setText("Проверка обновлений...")
 
     def show_download_progress(self, percent: int) -> None:
         self._app_spinner.hide()
         self._app_progress.show()
         self._app_progress.setValue(percent)
-        self._app_status.setText(f"Downloading: {percent}%")
+        self._app_status.setText(f"Загрузка: {percent}%")
         self.check_app_btn.setEnabled(False)
         self.download_btn.setEnabled(False)
 
@@ -146,12 +146,12 @@ class UpdatesPage(QWidget):
         self._app_spinner.stop()
         self._app_spinner.hide()
         self.check_app_btn.setEnabled(True)
-        self._app_status.setText(f"New version available: v{version}")
+        self._app_status.setText(f"Доступна новая версия: v{version}")
         self._app_status.setStyleSheet("color: #4CAF50; font-weight: bold;")
         self.download_btn.show()
-        self.download_btn.setText(f"Download v{version} & Install")
+        self.download_btn.setText(f"Скачать v{version} и установить")
 
     def show_up_to_date(self) -> None:
         self.show_idle()
-        self._app_status.setText("You are on the latest version")
+        self._app_status.setText("У вас последняя версия")
         self._app_status.setStyleSheet("color: #4CAF50;")

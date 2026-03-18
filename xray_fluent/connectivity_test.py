@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import time
-from urllib.request import ProxyHandler, Request, build_opener
+from urllib.request import ProxyHandler, Request
+
+from .http_utils import build_opener
 
 from PyQt6.QtCore import QThread, pyqtSignal
 

@@ -12,7 +12,9 @@ import urllib.request
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from .http_utils import build_opener, urlopen
 
 from PyQt6.QtCore import QThread, pyqtSignal
 
@@ -65,7 +67,7 @@ class UpdateChecker(QThread):
                     break
 
             if not asset:
-                self.error.emit(f"Release {tag} found but no Windows zip asset")
+                self.error.emit(f"Релиз {tag} найден, но отсутствует Windows zip-архив")
                 self.result.emit(None)
                 return
 
@@ -102,9 +104,9 @@ class UpdateDownloader(QThread):
             req = Request(self._update.download_url, headers={"User-Agent": USER_AGENT})
             if self._proxy_url:
                 handler = urllib.request.ProxyHandler({"http": self._proxy_url, "https": self._proxy_url})
-                opener = urllib.request.build_opener(handler)
+                opener = build_opener(handler)
             else:
-                opener = urllib.request.build_opener()
+                opener = build_opener()
             with opener.open(req, timeout=120) as resp:
                 total = int(resp.headers.get("Content-Length", 0))
                 downloaded = 0

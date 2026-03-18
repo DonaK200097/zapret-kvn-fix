@@ -5,7 +5,9 @@ import os
 import subprocess
 import time
 from typing import Any
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from .http_utils import urlopen
 
 _CREATE_NO_WINDOW = 0x08000000 if os.name == "nt" else 0
 

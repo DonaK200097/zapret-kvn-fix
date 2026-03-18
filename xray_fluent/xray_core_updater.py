@@ -8,7 +8,9 @@ from pathlib import Path
 import re
 import shutil
 import tempfile
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from .http_utils import urlopen
 import zipfile
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -241,7 +243,7 @@ def check_and_update_xray_core(
     if not exe.exists():
         return XrayCoreUpdateResult(
             status="error",
-            message=f"xray.exe not found: {exe}",
+            message=f"xray.exe не найден: {exe}",
             channel=_normalize_channel(channel),
             current_version="",
             latest_version="",
@@ -256,7 +258,7 @@ def check_and_update_xray_core(
     except Exception as exc:
         return XrayCoreUpdateResult(
             status="error",
-            message=f"failed to resolve release: {exc}",
+            message=f"Не удалось получить информацию о релизе: {exc}",
             channel=_normalize_channel(channel),
             current_version=current_version,
             latest_version="",
@@ -266,7 +268,7 @@ def check_and_update_xray_core(
     if not release or not release.url:
         return XrayCoreUpdateResult(
             status="error",
-            message="release info not found",
+            message="Информация о релизе не найдена",
             channel=_normalize_channel(channel),
             current_version=current_version,
             latest_version="",
@@ -277,7 +279,7 @@ def check_and_update_xray_core(
     if current_version and not _is_newer(latest_version, current_version):
         return XrayCoreUpdateResult(
             status="up_to_date",
-            message=f"Xray core is up to date ({current_version})",
+            message=f"Xray core актуален ({current_version})",
             channel=release.channel,
             current_version=current_version,
             latest_version=latest_version,
@@ -287,7 +289,7 @@ def check_and_update_xray_core(
     if not apply_update:
         return XrayCoreUpdateResult(
             status="available",
-            message=f"Xray update available: {latest_version}",
+            message=f"Доступно обновление Xray: {latest_version}",
             channel=release.channel,
             current_version=current_version,
             latest_version=latest_version,
@@ -302,7 +304,7 @@ def check_and_update_xray_core(
         except Exception as exc:
             return XrayCoreUpdateResult(
                 status="error",
-                message=f"download failed: {exc}",
+                message=f"Ошибка загрузки: {exc}",
                 channel=release.channel,
                 current_version=current_version,
                 latest_version=latest_version,
@@ -315,7 +317,7 @@ def check_and_update_xray_core(
             if real_hash.lower() != expected_hash.lower():
                 return XrayCoreUpdateResult(
                     status="error",
-                    message="archive hash mismatch",
+                    message="Контрольная сумма архива не совпадает",
                     channel=release.channel,
                     current_version=current_version,
                     latest_version=latest_version,
@@ -327,7 +329,7 @@ def check_and_update_xray_core(
         except Exception as exc:
             return XrayCoreUpdateResult(
                 status="error",
-                message=f"install failed: {exc}",
+                message=f"Ошибка установки: {exc}",
                 channel=release.channel,
                 current_version=current_version,
                 latest_version=latest_version,
@@ -337,7 +339,7 @@ def check_and_update_xray_core(
     refreshed = _extract_version(get_xray_version(str(exe)) or latest_version)
     return XrayCoreUpdateResult(
         status="updated",
-        message=f"Xray core updated to {refreshed}",
+        message=f"Xray core обновлён до {refreshed}",
         channel=release.channel,
         current_version=current_version,
         latest_version=refreshed,

@@ -5,7 +5,7 @@ from qfluentwidgets import BodyLabel, PasswordLineEdit, PrimaryPushButton, PushB
 
 
 class PasswordDialog(QDialog):
-    def __init__(self, title: str = "Unlock", parent=None):
+    def __init__(self, title: str = "Разблокировать", parent=None):
         super().__init__(parent)
         self.setWindowTitle(title)
         self.setModal(True)
@@ -16,16 +16,16 @@ class PasswordDialog(QDialog):
         root.setSpacing(10)
 
         root.addWidget(SubtitleLabel(title, self))
-        root.addWidget(BodyLabel("Enter master password", self))
+        root.addWidget(BodyLabel("Введите мастер-пароль", self))
 
         self.password_edit = PasswordLineEdit(self)
-        self.password_edit.setPlaceholderText("Password")
+        self.password_edit.setPlaceholderText("Пароль")
         self.password_edit.returnPressed.connect(self.accept)
         root.addWidget(self.password_edit)
 
         row = QHBoxLayout()
         row.addStretch(1)
-        self.cancel_btn = PushButton("Cancel", self)
+        self.cancel_btn = PushButton("Отмена", self)
         self.ok_btn = PrimaryPushButton("OK", self)
         row.addWidget(self.cancel_btn)
         row.addWidget(self.ok_btn)

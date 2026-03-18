@@ -26,6 +26,7 @@ from .storage import PassphraseRequired, StateStorage
 from .startup import build_startup_command, set_startup_enabled
 from .xray_core_updater import XrayCoreUpdateResult, XrayCoreUpdateWorker
 from .xray_manager import XrayManager, get_xray_version
+from .zapret_manager import ZapretManager
 
 
 class AppController(QObject):
@@ -49,6 +50,7 @@ class AppController(QObject):
         self.xray = XrayManager(self)
         self.singbox = SingBoxManager(self)
         self.tun2socks = Tun2SocksManager(self)
+        self.zapret = ZapretManager(self)
         self.proxy = ProxyManager()
         self.network_monitor = NetworkMonitor(parent=self)
 
@@ -117,7 +119,7 @@ class AppController(QObject):
         if version:
             self._log(f"[core] {version}")
         else:
-            self.status.emit("warning", "Cannot read Xray core version")
+            self.status.emit("warning", "Не удалось прочитать версию Xray")
 
         sb_version = get_singbox_version(self.state.settings.singbox_path)
         if sb_version:
@@ -130,12 +132,12 @@ class AppController(QObject):
     def set_data_passphrase(self, passphrase: str) -> None:
         self.storage.passphrase = passphrase
         self.save()
-        self.status.emit("success", "Data encryption enabled")
+        self.status.emit("success", "Шифрование данных включено")
 
     def clear_data_passphrase(self) -> None:
         self.storage.passphrase = ""
         self.save()
-        self.status.emit("info", "Data encryption disabled (portable mode)")
+        self.status.emit("info", "Шифрование данных отключено (портативный режим)")
 
     def is_data_encrypted(self) -> bool:
         return self.storage.is_encrypted()
@@ -194,6 +196,8 @@ class AppController(QObject):
             self.singbox.stop()
         if self.xray.is_running:
             self.xray.stop()
+        if self.zapret.running:
+            self.zapret.stop()
         # Always disable system proxy on exit to prevent leaked proxy
         if self.proxy.is_enabled():
             self.proxy.disable(restore_previous=True)
@@ -361,27 +365,27 @@ class AppController(QObject):
 
     def connect_selected(self, allow_during_reconnect: bool = False) -> bool:
         if self._reconnecting and not allow_during_reconnect:
-            self.status.emit("info", "Reconnect in progress")
+            self.status.emit("info", "Переподключение...")
             return False
 
         if self.locked:
-            self.status.emit("warning", "App is locked. Unlock to connect.")
+            self.status.emit("warning", "Приложение заблокировано. Разблокируйте для подключения.")
             return False
 
         node = self.selected_node
         if not node:
-            self.status.emit("warning", "Select a node first.")
+            self.status.emit("warning", "Сначала выберите сервер.")
             return False
 
         tun = self.state.settings.tun_mode
 
         if tun:
             self._log(f"[tun] attempting TUN connect, admin={_is_admin()}")
-            self.status.emit("info", f"Starting VPN: {node.name}...")
+            self.status.emit("info", f"Запуск VPN: {node.name}...")
 
             if not _is_admin():
                 self._log("[tun] NOT admin — aborting")
-                self.status.emit("error", "TUN mode requires Administrator. Run the app as Administrator.")
+                self.status.emit("error", "Режим TUN требует прав Администратора. Запустите приложение от имени Администратора.")
                 return False
 
             # TUN doesn't use system proxy — disable if it was left on
@@ -389,7 +393,7 @@ class AppController(QObject):
                 self.proxy.disable(restore_previous=True)
 
             # Start xray
-            self.status.emit("info", "Starting xray core...")
+            self.status.emit("info", "Запуск Xray...")
             xray_cfg = build_xray_config(node, self.state.routing, self.state.settings)
             xray_cfg["log"] = {"loglevel": "error"}
             socks_port = self.state.settings.socks_port
@@ -407,9 +411,9 @@ class AppController(QObject):
             xray_ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
             if not xray_ok:
                 self._log("[tun] xray start failed")
-                self.status.emit("error", "Failed to start xray core. Check logs for details.")
+                self.status.emit("error", "Не удалось запустить Xray. Проверьте логи.")
                 return False
-            self.status.emit("info", "Xray started. Creating TUN adapter...")
+            self.status.emit("info", "Xray запущен. Создание TUN адаптера...")
 
             # Start tun2socks
             self._log(f"[tun] starting tun2socks -> SOCKS 127.0.0.1:{socks_port}")
@@ -417,7 +421,7 @@ class AppController(QObject):
             self._log(f"[tun] tun2socks start result: {tun_ok}")
             if not tun_ok:
                 self.xray.stop()
-                self.status.emit("error", "Failed to create TUN adapter. Check if wintun.dll exists in core/.")
+                self.status.emit("error", "Не удалось создать TUN адаптер. Проверьте наличие wintun.dll в core/.")
                 return False
             self._active_core = "tun2socks"
         else:
@@ -435,14 +439,14 @@ class AppController(QObject):
                 )
 
         node.last_used_at = datetime.now(timezone.utc).isoformat()
-        self.status.emit("success", f"Connected: {node.name}" + (" (TUN)" if tun else ""))
+        self.status.emit("success", f"Подключено: {node.name}" + (" (TUN)" if tun else ""))
         self.save()
         return True
 
     def disconnect_current(self, disable_proxy: bool = True, emit_status: bool = True) -> bool:
         if self._active_core == "tun2socks":
             if emit_status:
-                self.status.emit("info", "Stopping VPN...")
+                self.status.emit("info", "Остановка VPN...")
             stopped = self.tun2socks.stop()
             if self.xray.is_running:
                 self.xray.stop()
@@ -455,7 +459,7 @@ class AppController(QObject):
             if disable_proxy and self.state.settings.enable_system_proxy:
                 self.proxy.disable(restore_previous=True)
         if emit_status:
-            self.status.emit("info", "Disconnected")
+            self.status.emit("info", "Отключено")
         return stopped
 
     def toggle_connection(self) -> None:
@@ -525,7 +529,7 @@ class AppController(QObject):
             try:
                 set_startup_enabled(APP_NAME, settings.launch_on_startup, build_startup_command())
             except Exception as exc:
-                self.status.emit("error", f"startup setting failed: {exc}")
+                self.status.emit("error", f"Ошибка настройки автозапуска: {exc}")
 
         if old_tun != settings.tun_mode and self.connected:
             self._reconnect("TUN mode toggled")
@@ -563,7 +567,7 @@ class AppController(QObject):
             target = "https://www.gstatic.com/generate_204"
 
         if self._connectivity_worker and self._connectivity_worker.isRunning():
-            self.status.emit("info", "Connection test already running")
+            self.status.emit("info", "Тест подключения уже выполняется")
             return
 
         self._connectivity_worker = ConnectivityTestWorker(
@@ -575,7 +579,7 @@ class AppController(QObject):
     def run_xray_core_update(self, apply_update: bool, silent: bool = False) -> None:
         if self._xray_update_worker and self._xray_update_worker.isRunning():
             if not silent:
-                self.status.emit("info", "Xray update task is already running")
+                self.status.emit("info", "Обновление Xray уже выполняется")
             return
 
         if apply_update and self.connected:
@@ -595,7 +599,7 @@ class AppController(QObject):
         self._xray_update_worker.start()
 
         if not silent:
-            message = "Updating Xray core..." if apply_update else "Checking Xray core updates..."
+            message = "Обновление Xray..." if apply_update else "Проверка обновлений Xray..."
             self.status.emit("info", message)
 
     def _start_metrics_worker(self) -> None:
@@ -721,11 +725,11 @@ class AppController(QObject):
 
     def _on_connectivity_result(self, ok: bool, message: str, elapsed_ms: int | None) -> None:
         if ok and elapsed_ms is not None:
-            text = f"Connectivity ok: {elapsed_ms} ms"
+            text = f"Подключение в порядке: {elapsed_ms} мс"
             self.status.emit("success", text)
             self._log(f"[test] {message} ({elapsed_ms} ms)")
         else:
-            self.status.emit("warning", "Connectivity test failed")
+            self.status.emit("warning", "Тест подключения не пройден")
             self._log(f"[test] {message}")
         self.connectivity_test_done.emit(ok, message, elapsed_ms)
 
@@ -775,7 +779,7 @@ class AppController(QObject):
         if not node:
             return
         self._log(f"[hot-swap] {reason} — restarting xray only, TUN stays up")
-        self.status.emit("info", f"Switching to {node.name}...")
+        self.status.emit("info", f"Переключение на {node.name}...")
         self.xray.stop()
         xray_cfg = build_xray_config(node, self.state.routing, self.state.settings)
         xray_cfg["log"] = {"loglevel": "error"}
@@ -793,11 +797,11 @@ class AppController(QObject):
         ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
         if ok:
             node.last_used_at = datetime.now(timezone.utc).isoformat()
-            self.status.emit("success", f"Switched: {node.name} (TUN)")
+            self.status.emit("success", f"Переключено: {node.name} (TUN)")
             self.save()
         else:
             self._log("[hot-swap] xray restart failed")
-            self.status.emit("error", "Failed to switch node")
+            self.status.emit("error", "Не удалось переключить сервер")
 
     def _reconnect(self, reason: str) -> None:
         if self._reconnecting:
@@ -807,7 +811,7 @@ class AppController(QObject):
             self._log(f"[reconnect] {reason}")
             stopped = self.disconnect_current(disable_proxy=False, emit_status=False)
             if not stopped:
-                self.status.emit("error", "Failed to stop previous Xray process")
+                self.status.emit("error", "Не удалось остановить предыдущий процесс Xray")
                 if self.state.settings.enable_system_proxy:
                     self.proxy.disable(restore_previous=True)
                 return

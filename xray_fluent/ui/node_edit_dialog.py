@@ -9,7 +9,7 @@ from ..models import Node
 class NodeEditDialog(QDialog):
     def __init__(self, node: Node, existing_groups: list[str], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Edit Node")
+        self.setWindowTitle("Редактирование сервера")
         self.setModal(True)
         self.setMinimumWidth(420)
 
@@ -17,25 +17,25 @@ class NodeEditDialog(QDialog):
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(10)
 
-        root.addWidget(SubtitleLabel("Edit Node", self))
+        root.addWidget(SubtitleLabel("Редактирование сервера", self))
 
-        root.addWidget(BodyLabel(f"Protocol: {node.scheme.upper()}", self))
-        root.addWidget(BodyLabel(f"Server: {node.server}:{node.port}", self))
+        root.addWidget(BodyLabel(f"Протокол: {node.scheme.upper()}", self))
+        root.addWidget(BodyLabel(f"Сервер: {node.server}:{node.port}", self))
 
-        root.addWidget(BodyLabel("Name", self))
+        root.addWidget(BodyLabel("Название", self))
         self.name_edit = LineEdit(self)
         self.name_edit.setText(node.name)
-        self.name_edit.setPlaceholderText("Node name")
+        self.name_edit.setPlaceholderText("Имя сервера")
         root.addWidget(self.name_edit)
 
-        root.addWidget(BodyLabel("Group", self))
+        root.addWidget(BodyLabel("Группа", self))
         self.group_combo = EditableComboBox(self)
         for g in existing_groups:
             self.group_combo.addItem(g)
         self.group_combo.setText(node.group)
         root.addWidget(self.group_combo)
 
-        root.addWidget(BodyLabel("Tags (comma-separated)", self))
+        root.addWidget(BodyLabel("Теги (через запятую)", self))
         self.tags_edit = LineEdit(self)
         self.tags_edit.setText(", ".join(node.tags))
         self.tags_edit.setPlaceholderText("tag1, tag2, tag3")
@@ -43,8 +43,8 @@ class NodeEditDialog(QDialog):
 
         row = QHBoxLayout()
         row.addStretch(1)
-        self.cancel_btn = PushButton("Cancel", self)
-        self.save_btn = PrimaryPushButton("Save", self)
+        self.cancel_btn = PushButton("Отмена", self)
+        self.save_btn = PrimaryPushButton("Сохранить", self)
         row.addWidget(self.cancel_btn)
         row.addWidget(self.save_btn)
         root.addLayout(row)

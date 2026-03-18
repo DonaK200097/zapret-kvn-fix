@@ -39,11 +39,11 @@ def _format_latency(value_ms: int | None) -> str:
 
 def _mode_title(mode: str) -> str:
     mapping = {
-        "global": "Global",
-        "rule": "Rule",
-        "direct": "Direct",
+        "global": "Глобальный",
+        "rule": "Правила",
+        "direct": "Прямой",
     }
-    return mapping.get(mode, mode.title() or "Unknown")
+    return mapping.get(mode, mode.title() or "Неизвестно")
 
 
 class DashboardPage(QWidget):
@@ -82,8 +82,8 @@ class DashboardPage(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
 
-        root.addWidget(SubtitleLabel("Dashboard", self))
-        self.summary_label = CaptionLabel("Minimal overview of connection, profile, traffic, and routing.", self)
+        root.addWidget(SubtitleLabel("Панель управления", self))
+        self.summary_label = CaptionLabel("Краткий обзор подключения, профиля, трафика и маршрутизации.", self)
         self.summary_label.setWordWrap(True)
         root.addWidget(self.summary_label)
 
@@ -97,11 +97,11 @@ class DashboardPage(QWidget):
         connection_layout = QVBoxLayout(self.connection_card)
         connection_layout.setContentsMargins(18, 16, 18, 16)
         connection_layout.setSpacing(6)
-        connection_layout.addWidget(StrongBodyLabel("Connection", self.connection_card))
-        self.connection_state_label = SubtitleLabel("Standby", self.connection_card)
-        self.connection_engine_label = BodyLabel("System proxy", self.connection_card)
-        self.connection_status_label = CaptionLabel("Proxy is stopped", self.connection_card)
-        self.connection_target_label = CaptionLabel("No active profile selected", self.connection_card)
+        connection_layout.addWidget(StrongBodyLabel("Подключение", self.connection_card))
+        self.connection_state_label = SubtitleLabel("Ожидание", self.connection_card)
+        self.connection_engine_label = BodyLabel("Системный прокси", self.connection_card)
+        self.connection_status_label = CaptionLabel("Прокси остановлен", self.connection_card)
+        self.connection_target_label = CaptionLabel("Активный профиль не выбран", self.connection_card)
         self.connection_target_label.setWordWrap(True)
         connection_layout.addWidget(self.connection_state_label)
         connection_layout.addWidget(self.connection_engine_label)
@@ -113,13 +113,13 @@ class DashboardPage(QWidget):
         profile_layout = QVBoxLayout(self.profile_card)
         profile_layout.setContentsMargins(18, 16, 18, 16)
         profile_layout.setSpacing(8)
-        profile_layout.addWidget(StrongBodyLabel("Active profile", self.profile_card))
+        profile_layout.addWidget(StrongBodyLabel("Активный профиль", self.profile_card))
         self.node_combo = ComboBox(self.profile_card)
         profile_layout.addWidget(self.node_combo)
-        self.profile_name_label = BodyLabel("No profile selected", self.profile_card)
-        self.profile_endpoint_label = CaptionLabel("Import or choose a node first", self.profile_card)
-        self.profile_group_label = CaptionLabel("Group: --", self.profile_card)
-        self.profile_latency_label = CaptionLabel("Latency: --", self.profile_card)
+        self.profile_name_label = BodyLabel("Профиль не выбран", self.profile_card)
+        self.profile_endpoint_label = CaptionLabel("Сначала импортируйте или выберите узел", self.profile_card)
+        self.profile_group_label = CaptionLabel("Группа: --", self.profile_card)
+        self.profile_latency_label = CaptionLabel("Задержка: --", self.profile_card)
         self.profile_endpoint_label.setWordWrap(True)
         profile_layout.addWidget(self.profile_name_label)
         profile_layout.addStretch(1)
@@ -131,13 +131,13 @@ class DashboardPage(QWidget):
         traffic_layout = QVBoxLayout(self.traffic_card)
         traffic_layout.setContentsMargins(18, 16, 18, 16)
         traffic_layout.setSpacing(6)
-        traffic_layout.addWidget(StrongBodyLabel("Traffic", self.traffic_card))
-        self.traffic_down_label = BodyLabel("Download: 0 B/s", self.traffic_card)
-        self.traffic_up_label = BodyLabel("Upload: 0 B/s", self.traffic_card)
+        traffic_layout.addWidget(StrongBodyLabel("Трафик", self.traffic_card))
+        self.traffic_down_label = BodyLabel("Загрузка: 0 B/s", self.traffic_card)
+        self.traffic_up_label = BodyLabel("Выгрузка: 0 B/s", self.traffic_card)
         self.traffic_rtt_label = BodyLabel("RTT: --", self.traffic_card)
         self.traffic_graph = TrafficGraphWidget(self.traffic_card)
         self.traffic_graph.clicked.connect(self._show_traffic_detail)
-        self.traffic_peak_label = CaptionLabel("Peak: 0 B/s", self.traffic_card)
+        self.traffic_peak_label = CaptionLabel("Пик: 0 B/s", self.traffic_card)
         traffic_layout.addWidget(self.traffic_down_label)
         traffic_layout.addWidget(self.traffic_up_label)
         traffic_layout.addWidget(self.traffic_rtt_label)
@@ -148,16 +148,16 @@ class DashboardPage(QWidget):
         routing_layout = QVBoxLayout(self.routing_card)
         routing_layout.setContentsMargins(18, 16, 18, 16)
         routing_layout.setSpacing(8)
-        routing_layout.addWidget(StrongBodyLabel("Routing", self.routing_card))
+        routing_layout.addWidget(StrongBodyLabel("Маршрутизация", self.routing_card))
         self.mode_combo = ComboBox(self.routing_card)
-        self.mode_combo.addItem("Global", userData="global")
-        self.mode_combo.addItem("Rule", userData="rule")
-        self.mode_combo.addItem("Direct", userData="direct")
+        self.mode_combo.addItem("Глобальный", userData="global")
+        self.mode_combo.addItem("Правила", userData="rule")
+        self.mode_combo.addItem("Прямой", userData="direct")
         routing_layout.addWidget(self.mode_combo)
-        self.routing_mode_label = BodyLabel("Rule", self.routing_card)
-        self.routing_dns_label = CaptionLabel("DNS: System", self.routing_card)
-        self.routing_rules_label = CaptionLabel("Direct: 0   Proxy: 0   Block: 0", self.routing_card)
-        self.routing_bypass_label = CaptionLabel("Bypass LAN: enabled", self.routing_card)
+        self.routing_mode_label = BodyLabel("Правила", self.routing_card)
+        self.routing_dns_label = CaptionLabel("DNS: Системный", self.routing_card)
+        self.routing_rules_label = CaptionLabel("Прямые: 0   Прокси: 0   Блок: 0", self.routing_card)
+        self.routing_bypass_label = CaptionLabel("Обход LAN: включён", self.routing_card)
         self.routing_bypass_label.setWordWrap(True)
         routing_layout.addWidget(self.routing_mode_label)
         routing_layout.addStretch(1)
@@ -173,12 +173,12 @@ class DashboardPage(QWidget):
 
         actions_row = QHBoxLayout()
         actions_row.setSpacing(8)
-        self.toggle_btn = PrimaryPushButton("Start Proxy", self)
-        self.test_btn = PushButton("Connection test", self)
-        self.nodes_btn = PushButton("Nodes", self)
-        self.routing_btn = PushButton("Routing", self)
-        self.logs_btn = PushButton("Logs", self)
-        self.settings_btn = PushButton("Settings", self)
+        self.toggle_btn = PrimaryPushButton("Запустить прокси", self)
+        self.test_btn = PushButton("Тест соединения", self)
+        self.nodes_btn = PushButton("Узлы", self)
+        self.routing_btn = PushButton("Маршрутизация", self)
+        self.logs_btn = PushButton("Логи", self)
+        self.settings_btn = PushButton("Настройки", self)
         actions_row.addWidget(self.toggle_btn)
         actions_row.addWidget(self.test_btn)
         actions_row.addWidget(self.nodes_btn)
@@ -219,7 +219,7 @@ class DashboardPage(QWidget):
             self.node_combo.setCurrentIndex(selected_index)
             self._selected_node = self._nodes[selected_index]
         else:
-            self.node_combo.addItem("No profiles imported")
+            self.node_combo.addItem("Профили не импортированы")
             self.node_combo.setEnabled(False)
             self._selected_node = None
 
@@ -303,10 +303,10 @@ class DashboardPage(QWidget):
         self.test_btn.setEnabled(self._selected_node is not None)
 
     def _refresh_connection_card(self) -> None:
-        action = "VPN" if self._settings.tun_mode else "Proxy"
-        self.connection_state_label.setText("Connected" if self._connected else "Standby")
+        action = "VPN" if self._settings.tun_mode else "Прокси"
+        self.connection_state_label.setText("Подключено" if self._connected else "Ожидание")
         self.connection_engine_label.setText(self._route_engine_label())
-        self.connection_status_label.setText(f"{action} is {'running' if self._connected else 'stopped'}")
+        self.connection_status_label.setText(f"{action} {'работает' if self._connected else 'остановлен'}")
         self.connection_target_label.setText(self._selected_node_summary())
         self.toggle_btn.setText(self._toggle_action_text())
         self.summary_label.setText(self._summary_text())
@@ -314,52 +314,52 @@ class DashboardPage(QWidget):
     def _refresh_profile_card(self) -> None:
         selected = self._selected_node
         if selected is None:
-            self.profile_name_label.setText("No profile selected")
-            self.profile_endpoint_label.setText("Import or choose a node first")
-            self.profile_group_label.setText(f"Profiles: {len(self._nodes)}")
-            self.profile_latency_label.setText("Latency: --")
+            self.profile_name_label.setText("Профиль не выбран")
+            self.profile_endpoint_label.setText("Сначала импортируйте или выберите узел")
+            self.profile_group_label.setText(f"Профилей: {len(self._nodes)}")
+            self.profile_latency_label.setText("Задержка: --")
             return
 
-        self.profile_name_label.setText(selected.name or "Unnamed profile")
+        self.profile_name_label.setText(selected.name or "Безымянный профиль")
         scheme = selected.scheme.upper() if selected.scheme else "NODE"
         self.profile_endpoint_label.setText(f"{selected.server or '--'}:{selected.port or '--'}  ({scheme})")
-        self.profile_group_label.setText(f"Group: {selected.group or 'Default'}")
-        self.profile_latency_label.setText(f"Latency: {_format_latency(self._effective_latency())}")
+        self.profile_group_label.setText(f"Группа: {selected.group or 'По умолчанию'}")
+        self.profile_latency_label.setText(f"Задержка: {_format_latency(self._effective_latency())}")
 
     def _refresh_traffic_card(self) -> None:
-        self.traffic_down_label.setText(f"Download: {_format_speed(self._last_down_bps)}")
-        self.traffic_up_label.setText(f"Upload: {_format_speed(self._last_up_bps)}")
+        self.traffic_down_label.setText(f"Загрузка: {_format_speed(self._last_down_bps)}")
+        self.traffic_up_label.setText(f"Выгрузка: {_format_speed(self._last_up_bps)}")
         self.traffic_rtt_label.setText(f"RTT: {_format_latency(self._effective_latency())}")
-        self.traffic_peak_label.setText(f"Peak: {_format_speed(self._peak_bps)}")
+        self.traffic_peak_label.setText(f"Пик: {_format_speed(self._peak_bps)}")
 
     def _refresh_routing_card(self) -> None:
         self.routing_mode_label.setText(_mode_title(self._routing.mode))
         self.routing_dns_label.setText(f"DNS: {self._routing.dns_mode.title()}")
         self.routing_rules_label.setText(
-            f"Direct: {len(self._routing.direct_domains)}   Proxy: {len(self._routing.proxy_domains)}   Block: {len(self._routing.block_domains)}"
+            f"Прямые: {len(self._routing.direct_domains)}   Прокси: {len(self._routing.proxy_domains)}   Блок: {len(self._routing.block_domains)}"
         )
-        bypass = "enabled" if self._routing.bypass_lan else "disabled"
-        self.routing_bypass_label.setText(f"Bypass LAN: {bypass}")
+        bypass = "включён" if self._routing.bypass_lan else "выключен"
+        self.routing_bypass_label.setText(f"Обход LAN: {bypass}")
 
     def _effective_latency(self) -> int | None:
         return self._live_rtt_ms if self._live_rtt_ms is not None else self._selected_latency_ms
 
     def _route_engine_label(self) -> str:
         if self._settings.tun_mode:
-            return "VPN mode (TUN)"
+            return "Режим VPN (TUN)"
         if self._settings.enable_system_proxy:
-            return f"System proxy  HTTP {self._settings.http_port} / SOCKS {self._settings.socks_port}"
-        return f"Local proxy  HTTP {self._settings.http_port} / SOCKS {self._settings.socks_port}"
+            return f"Системный прокси  HTTP {self._settings.http_port} / SOCKS {self._settings.socks_port}"
+        return f"Локальный прокси  HTTP {self._settings.http_port} / SOCKS {self._settings.socks_port}"
 
     def _toggle_action_text(self) -> str:
-        noun = "VPN" if self._settings.tun_mode else "Proxy"
-        verb = "Stop" if self._connected else "Start"
-        return f"{verb} {noun}"
+        if self._settings.tun_mode:
+            return "Остановить VPN" if self._connected else "Запустить VPN"
+        return "Остановить прокси" if self._connected else "Запустить прокси"
 
     def _selected_node_summary(self) -> str:
         if self._selected_node is None:
-            return "No active profile selected"
-        group = self._selected_node.group or "Default"
+            return "Активный профиль не выбран"
+        group = self._selected_node.group or "По умолчанию"
         scheme = self._selected_node.scheme.upper() if self._selected_node.scheme else "NODE"
         server = self._selected_node.server or "unknown-host"
         port = self._selected_node.port or "--"
@@ -367,13 +367,13 @@ class DashboardPage(QWidget):
 
     def _summary_text(self) -> str:
         if self._selected_node is None:
-            return "Choose a node to start the proxy or VPN and review the live session state."
+            return "Выберите узел, чтобы запустить прокси или VPN и просмотреть состояние сеанса."
         if self._connected:
-            return f"Active session: {self._selected_node_summary()}"
-        return f"Ready to start with {self._selected_node_summary()}"
+            return f"Активный сеанс: {self._selected_node_summary()}"
+        return f"Готов к запуску: {self._selected_node_summary()}"
 
     def _node_title(self, node: Node) -> str:
-        name = node.name or node.server or "Unnamed"
+        name = node.name or node.server or "Безымянный"
         scheme = node.scheme.upper() if node.scheme else "NODE"
         return f"{name} ({scheme})"
 

@@ -29,6 +29,7 @@ from .nodes_page import NodesPage
 from .routing_page import RoutingPage
 from .settings_page import SettingsPage
 from .updates_page import UpdatesPage
+from .zapret_page import ZapretPage
 
 
 class MainWindow(FluentWindow):
@@ -55,6 +56,7 @@ class MainWindow(FluentWindow):
         self.dashboard_page = DashboardPage(self)
         self.nodes_page = NodesPage(self)
         self.routing_page = RoutingPage(self)
+        self.zapret_page = ZapretPage(self)
         self.logs_page = LogsPage(self)
         self.settings_page = SettingsPage(self)
         self.updates_page = UpdatesPage(self)
@@ -85,15 +87,18 @@ class MainWindow(FluentWindow):
         if self.controller.state.settings.xray_auto_update:
             QTimer.singleShot(4500, lambda: self.controller.run_xray_core_update(True, silent=True))
 
+        self._init_zapret_page()
+
     def _create_navigation(self) -> None:
         self.navigationInterface.setMinimumExpandWidth(700)
         self.navigationInterface.setExpandWidth(200)
-        self.addSubInterface(self.dashboard_page, FIF.SPEED_HIGH, "Dashboard")
-        self.addSubInterface(self.nodes_page, FIF.LINK, "Nodes")
-        self.addSubInterface(self.routing_page, FIF.GLOBE, "Routing")
-        self.addSubInterface(self.logs_page, FIF.DOCUMENT, "Logs")
-        self.addSubInterface(self.updates_page, FIF.UPDATE, "Updates", NavigationItemPosition.BOTTOM)
-        self.addSubInterface(self.settings_page, FIF.SETTING, "Settings", NavigationItemPosition.BOTTOM)
+        self.addSubInterface(self.dashboard_page, FIF.SPEED_HIGH, "Панель")
+        self.addSubInterface(self.nodes_page, FIF.LINK, "Серверы")
+        self.addSubInterface(self.routing_page, FIF.GLOBE, "Маршруты")
+        self.addSubInterface(self.zapret_page, FIF.COMMAND_PROMPT, "Zapret")
+        self.addSubInterface(self.logs_page, FIF.DOCUMENT, "Логи")
+        self.addSubInterface(self.updates_page, FIF.UPDATE, "Обновления", NavigationItemPosition.BOTTOM)
+        self.addSubInterface(self.settings_page, FIF.SETTING, "Настройки", NavigationItemPosition.BOTTOM)
 
     def _create_tray(self) -> None:
         self.tray = QSystemTrayIcon(self)
@@ -101,19 +106,19 @@ class MainWindow(FluentWindow):
         self.tray.setToolTip(APP_NAME)
 
         menu = QMenu()
-        self.tray_show_action = QAction("Show", self)
-        self.tray_connect_action = QAction("Connect", self)
-        self.tray_next_action = QAction("Next node", self)
-        self.tray_quit_action = QAction("Quit", self)
+        self.tray_show_action = QAction("Показать", self)
+        self.tray_connect_action = QAction("Подключить", self)
+        self.tray_next_action = QAction("Следующий сервер", self)
+        self.tray_quit_action = QAction("Выход", self)
 
-        self.tray_mode_menu = QMenu("Mode", menu)
+        self.tray_mode_menu = QMenu("Режим", menu)
         self.tray_mode_group = QActionGroup(self)
         self.tray_mode_group.setExclusive(True)
-        self.tray_mode_global = QAction("Global", self)
+        self.tray_mode_global = QAction("Глобальный", self)
         self.tray_mode_global.setCheckable(True)
-        self.tray_mode_rule = QAction("Rule", self)
+        self.tray_mode_rule = QAction("По правилам", self)
         self.tray_mode_rule.setCheckable(True)
-        self.tray_mode_direct = QAction("Direct", self)
+        self.tray_mode_direct = QAction("Прямой", self)
         self.tray_mode_direct.setCheckable(True)
 
         self.tray_mode_group.addAction(self.tray_mode_global)
@@ -165,6 +170,13 @@ class MainWindow(FluentWindow):
         self.nodes_page.bulk_edit_requested.connect(self._on_bulk_edit_nodes)
 
         self.routing_page.apply_requested.connect(self.controller.update_routing)
+
+        self.zapret_page.start_requested.connect(self._on_zapret_start)
+        self.zapret_page.stop_requested.connect(self._on_zapret_stop)
+        self.controller.zapret.started.connect(lambda: self.zapret_page.set_running(True))
+        self.controller.zapret.stopped.connect(lambda: self.zapret_page.set_running(False))
+        self.controller.zapret.error.connect(self._on_zapret_error)
+        self.controller.zapret.log_line.connect(self.logs_page.append_line)
 
         self.logs_page.clear_requested.connect(self._clear_logs_view)
         self.logs_page.export_diag_requested.connect(self._export_diagnostics)
@@ -227,7 +239,7 @@ class MainWindow(FluentWindow):
 
     def _on_connection_changed(self, connected: bool) -> None:
         self.dashboard_page.set_connection(connected)
-        self.tray_connect_action.setText("Disconnect" if connected else "Connect")
+        self.tray_connect_action.setText("Отключить" if connected else "Подключить")
         self._refresh_tray_tooltip()
 
     def _on_routing_changed(self, routing: RoutingSettings) -> None:
@@ -267,35 +279,35 @@ class MainWindow(FluentWindow):
 
     def _on_lock_state_changed(self, locked: bool) -> None:
         if locked:
-            self._show_status("warning", "App locked")
+            self._show_status("warning", "Приложение заблокировано")
             self._ensure_unlocked(startup=False)
 
     def _show_status(self, level: str, message: str) -> None:
         level = level.lower().strip()
         if level == "error":
-            InfoBar.error("Error", message, position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self)
+            InfoBar.error("Ошибка", message, position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self)
         elif level == "warning":
-            InfoBar.warning("Warning", message, position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self)
+            InfoBar.warning("Внимание", message, position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self)
         elif level == "success":
-            InfoBar.success("Success", message, position=InfoBarPosition.TOP_RIGHT, duration=2200, parent=self)
+            InfoBar.success("Успешно", message, position=InfoBarPosition.TOP_RIGHT, duration=2200, parent=self)
         else:
-            InfoBar.info("Info", message, position=InfoBarPosition.TOP_RIGHT, duration=2200, parent=self)
+            InfoBar.info("Инфо", message, position=InfoBarPosition.TOP_RIGHT, duration=2200, parent=self)
 
     def _import_nodes_from_clipboard(self) -> None:
         clipboard = QApplication.clipboard()
         text = clipboard.text().strip() if clipboard is not None else ""
         if not text:
-            self._show_status("warning", "Clipboard is empty")
+            self._show_status("warning", "Буфер обмена пуст")
             return
 
         added, errors = self.controller.import_nodes_from_text(text)
         if added:
-            self._show_status("success", f"Imported {added} node(s)")
+            self._show_status("success", f"Импортировано серверов: {added}")
         if errors:
             preview = "; ".join(errors[:2])
-            self._show_status("warning", f"Some links failed: {preview}")
+            self._show_status("warning", f"Некоторые ссылки не удалось импортировать: {preview}")
         if not added and not errors:
-            self._show_status("warning", "No new nodes imported")
+            self._show_status("warning", "Новых серверов не импортировано")
 
     def _ping_requested(self, ids: set[str]) -> None:
         if ids:
@@ -321,34 +333,34 @@ class MainWindow(FluentWindow):
             ops = dialog.get_operations()
             if ops["group"] or ops["add_tags"] or ops["remove_tags"]:
                 count = self.controller.bulk_update_nodes(node_ids, ops)
-                self._show_status("success", f"Updated {count} node(s)")
+                self._show_status("success", f"Обновлено серверов: {count}")
 
     def _export_outbound_json(self, node_id: str) -> None:
         payload = self.controller.export_node_outbound_json(node_id)
         if not payload:
-            self._show_status("warning", "Select one node to export")
+            self._show_status("warning", "Выберите сервер для экспорта")
             return
         self._save_json_payload(payload, "outbound.json")
 
     def _export_runtime_json(self, node_id: str) -> None:
         payload = self.controller.export_runtime_config_json(node_id)
         if not payload:
-            self._show_status("warning", "Select one node to export")
+            self._show_status("warning", "Выберите сервер для экспорта")
             return
         self._save_json_payload(payload, "xray_config.json")
 
     def _save_json_payload(self, payload: str, suggested_name: str) -> None:
-        file_path, _ = QFileDialog.getSaveFileName(self, "Export JSON", suggested_name, "JSON files (*.json)")
+        file_path, _ = QFileDialog.getSaveFileName(self, "Экспорт JSON", suggested_name, "JSON files (*.json)")
         if file_path:
             with open(file_path, "w", encoding="utf-8") as file:
                 file.write(payload)
-            self._show_status("success", f"Exported JSON: {file_path}")
+            self._show_status("success", f"JSON экспортирован: {file_path}")
             return
 
         clipboard = QApplication.clipboard()
         if clipboard is not None:
             clipboard.setText(payload)
-            self._show_status("info", "Export cancelled, JSON copied to clipboard")
+            self._show_status("info", "Экспорт отменён, JSON скопирован в буфер обмена")
 
     def _set_mode_only(self, mode: str) -> None:
         routing = self.controller.state.routing
@@ -366,7 +378,7 @@ class MainWindow(FluentWindow):
 
     def _set_password(self, password: str) -> None:
         self.controller.set_master_password(password)
-        self._show_status("success", "Master password enabled")
+        self._show_status("success", "Мастер-пароль включён")
 
     def _update_auto_lock_minutes(self, minutes: int) -> None:
         self.controller.state.security.auto_lock_minutes = max(1, minutes)
@@ -377,7 +389,34 @@ class MainWindow(FluentWindow):
 
     def _export_diagnostics(self) -> None:
         path = self.controller.build_diagnostics()
-        self._show_status("success", f"Diagnostics exported: {path}")
+        self._show_status("success", f"Диагностика экспортирована: {path}")
+
+    # ── Zapret ───────────────────────────────────────────────
+
+    def _init_zapret_page(self) -> None:
+        from ..zapret_manager import ZapretManager
+        presets = ZapretManager.list_presets()
+        saved = self.controller.state.settings.zapret_preset
+        self.zapret_page.set_presets(presets, saved)
+        if self.controller.state.settings.zapret_autostart and saved and saved in presets:
+            QTimer.singleShot(1000, lambda: self._on_zapret_start(saved))
+
+    def _on_zapret_start(self, preset_name: str) -> None:
+        if preset_name == "__refresh__":
+            from ..zapret_manager import ZapretManager
+            presets = ZapretManager.list_presets()
+            self.zapret_page.set_presets(presets, self.controller.state.settings.zapret_preset)
+            return
+        self.controller.state.settings.zapret_preset = preset_name
+        self.controller.save()
+        self.controller.zapret.start(preset_name)
+
+    def _on_zapret_stop(self) -> None:
+        self.controller.zapret.stop()
+
+    def _on_zapret_error(self, message: str) -> None:
+        self.zapret_page.set_error(message)
+        self._show_status("error", f"Zapret: {message}")
 
     def _check_updates(self, silent: bool = False) -> None:
         if getattr(self, "_update_in_progress", False):
@@ -395,15 +434,15 @@ class MainWindow(FluentWindow):
         self._update_in_progress = False
         if not silent:
             self.updates_page.show_idle()
-            self.updates_page.set_app_status(f"Check failed: {err}")
-            self._show_status("error", f"Update check failed: {err}")
+            self.updates_page.set_app_status(f"Ошибка проверки: {err}")
+            self._show_status("error", f"Ошибка проверки обновлений: {err}")
 
     def _on_update_check_result(self, update: AppUpdate | None, silent: bool) -> None:
         self._update_in_progress = False
         if update is None:
             self.updates_page.show_up_to_date()
             if not silent:
-                self._show_status("info", "You are on the latest version")
+                self._show_status("info", "У вас установлена последняя версия")
             return
 
         self._pending_update = update
@@ -421,14 +460,14 @@ class MainWindow(FluentWindow):
 
         from qfluentwidgets import MessageBox
         box = MessageBox(
-            "Update available",
-            f"New version v{update.version} is available.\n"
-            f"Current: v{APP_VERSION}\n\n"
-            f"The app will download, close, and restart automatically.",
+            "Доступно обновление",
+            f"Доступна новая версия v{update.version}.\n"
+            f"Текущая: v{APP_VERSION}\n\n"
+            f"Приложение скачает обновление, закроется и перезапустится автоматически.",
             self,
         )
-        box.yesButton.setText("Download && Install")
-        box.cancelButton.setText("Later")
+        box.yesButton.setText("Скачать и установить")
+        box.cancelButton.setText("Позже")
         if box.exec():
             self._start_update_download(update)
 
@@ -451,14 +490,14 @@ class MainWindow(FluentWindow):
         self._update_downloader.start()
 
     def _on_update_ready(self) -> None:
-        self.updates_page.set_app_status("Update downloaded. Restarting...")
-        self._show_status("success", "Update downloaded. Restarting...")
+        self.updates_page.set_app_status("Обновление загружено. Перезапуск...")
+        self._show_status("success", "Обновление загружено. Перезапуск...")
         QTimer.singleShot(1500, lambda: QApplication.quit())
 
     def _on_update_error(self, err: str) -> None:
         self.updates_page.show_idle()
-        self.updates_page.set_app_status(f"Update failed: {err}")
-        self._show_status("error", f"Update failed: {err}")
+        self.updates_page.set_app_status(f"Ошибка обновления: {err}")
+        self._show_status("error", f"Ошибка обновления: {err}")
 
     def _apply_theme(self, theme_name: str, accent_color: str) -> None:
         normalized = theme_name.lower().strip()
@@ -478,8 +517,8 @@ class MainWindow(FluentWindow):
 
     def _refresh_tray_tooltip(self) -> None:
         node = self.controller.selected_node
-        status = "Connected" if self.controller.connected else "Disconnected"
-        node_text = node.name if node else "No node"
+        status = "Подключено" if self.controller.connected else "Отключено"
+        node_text = node.name if node else "Нет сервера"
         self.tray.setToolTip(f"{APP_NAME}\n{status}\n{node_text}")
 
     def _ensure_unlocked(self, startup: bool) -> bool:
@@ -487,7 +526,7 @@ class MainWindow(FluentWindow):
             return True
 
         while True:
-            dialog = PasswordDialog("Unlock zapret kvn", self)
+            dialog = PasswordDialog("Разблокировка", self)
             result = dialog.exec()
             if result != int(QDialog.DialogCode.Accepted):
                 if startup:
@@ -495,10 +534,10 @@ class MainWindow(FluentWindow):
                 return False
 
             if self.controller.unlock(dialog.password()):
-                self._show_status("success", "Unlocked")
+                self._show_status("success", "Разблокировано")
                 return True
 
-            self._show_status("error", "Wrong password")
+            self._show_status("error", "Неверный пароль")
 
     def _load_with_passphrase(self) -> bool:
         if self.controller.load():
@@ -506,8 +545,8 @@ class MainWindow(FluentWindow):
 
         # State file is encrypted — ask for passphrase
         while True:
-            dialog = PasswordDialog("Encrypted data", self)
-            dialog.password_edit.setPlaceholderText("Enter encryption passphrase")
+            dialog = PasswordDialog("Зашифрованные данные", self)
+            dialog.password_edit.setPlaceholderText("Введите пароль шифрования")
             result = dialog.exec()
             if result != int(QDialog.DialogCode.Accepted):
                 self._quit_app()
@@ -522,31 +561,31 @@ class MainWindow(FluentWindow):
                 self.controller.load()
                 return True
             except Exception:
-                self._show_status("error", "Wrong passphrase")
+                self._show_status("error", "Неверный пароль шифрования")
 
     def _export_backup(self) -> None:
         file_path, _ = QFileDialog.getSaveFileName(
-            self, "Export backup", "xray_fluent_backup.json", "Backup files (*.json)"
+            self, "Экспорт резервной копии", "xray_fluent_backup.json", "Backup files (*.json)"
         )
         if not file_path:
             return
 
         passphrase = ""
-        dialog = PasswordDialog("Encrypt backup?", self)
-        dialog.password_edit.setPlaceholderText("Passphrase (leave empty for plain)")
+        dialog = PasswordDialog("Зашифровать резервную копию?", self)
+        dialog.password_edit.setPlaceholderText("Пароль (оставьте пустым для открытого формата)")
         if dialog.exec() == int(QDialog.DialogCode.Accepted):
             passphrase = dialog.password()
 
         try:
             from pathlib import Path
             self.controller.export_backup(Path(file_path), passphrase)
-            self._show_status("success", f"Backup exported: {file_path}")
+            self._show_status("success", f"Резервная копия экспортирована: {file_path}")
         except Exception as exc:
-            self._show_status("error", f"Export failed: {exc}")
+            self._show_status("error", f"Ошибка экспорта: {exc}")
 
     def _import_backup(self) -> None:
         file_path, _ = QFileDialog.getOpenFileName(
-            self, "Import backup", "", "Backup files (*.json);;All files (*)"
+            self, "Импорт резервной копии", "", "Backup files (*.json);;All files (*)"
         )
         if not file_path:
             return
@@ -558,19 +597,19 @@ class MainWindow(FluentWindow):
         passphrase = ""
         from ..security import is_passphrase_encrypted
         if is_passphrase_encrypted(raw):
-            dialog = PasswordDialog("Decrypt backup", self)
-            dialog.password_edit.setPlaceholderText("Enter backup passphrase")
+            dialog = PasswordDialog("Расшифровать резервную копию", self)
+            dialog.password_edit.setPlaceholderText("Введите пароль резервной копии")
             if dialog.exec() != int(QDialog.DialogCode.Accepted):
                 return
             passphrase = dialog.password()
 
         try:
             self.controller.import_backup(path, passphrase)
-            self._show_status("success", "Backup imported successfully")
+            self._show_status("success", "Резервная копия успешно импортирована")
         except PassphraseRequired:
-            self._show_status("error", "Passphrase required for this backup")
+            self._show_status("error", "Для этой резервной копии требуется пароль")
         except Exception as exc:
-            self._show_status("error", f"Import failed: {exc}")
+            self._show_status("error", f"Ошибка импорта: {exc}")
 
     def _set_encryption(self, passphrase: str) -> None:
         self.controller.set_data_passphrase(passphrase)
@@ -631,5 +670,5 @@ class MainWindow(FluentWindow):
         e.ignore()
         self.hide()
         if not self._tray_notified:
-            self.tray.showMessage(APP_NAME, "App is running in system tray", QSystemTrayIcon.MessageIcon.Information, 2000)
+            self.tray.showMessage(APP_NAME, "Приложение свёрнуто в системный трей", QSystemTrayIcon.MessageIcon.Information, 2000)
             self._tray_notified = True

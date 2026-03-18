@@ -21,7 +21,7 @@ from qfluentwidgets import RoundMenu, Action
 from ..country_flags import get_flag_icon
 from ..models import Node
 
-_SORT_KEYS = ["Name", "Group", "Protocol", "Ping", "Last used"]
+_SORT_KEYS = ["Имя", "Группа", "Протокол", "Пинг", "Последнее использование"]
 
 
 class NodesPage(QWidget):
@@ -47,7 +47,7 @@ class NodesPage(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
 
-        title = SubtitleLabel("Nodes", self)
+        title = SubtitleLabel("Серверы", self)
         root.addWidget(title)
 
         # --- Filter row ---
@@ -55,30 +55,30 @@ class NodesPage(QWidget):
         filter_row.setSpacing(8)
 
         self.search_edit = SearchLineEdit(self)
-        self.search_edit.setPlaceholderText("Search nodes")
+        self.search_edit.setPlaceholderText("Поиск серверов")
         filter_row.addWidget(self.search_edit, 1)
 
-        filter_row.addWidget(BodyLabel("Group:", self))
+        filter_row.addWidget(BodyLabel("Группа:", self))
         self.group_filter = ComboBox(self)
         self.group_filter.setMinimumWidth(120)
-        self.group_filter.addItem("All Groups")
+        self.group_filter.addItem("Все группы")
         filter_row.addWidget(self.group_filter)
 
-        filter_row.addWidget(BodyLabel("Tag:", self))
+        filter_row.addWidget(BodyLabel("Тег:", self))
         self.tag_filter = ComboBox(self)
         self.tag_filter.setMinimumWidth(120)
-        self.tag_filter.addItem("All Tags")
+        self.tag_filter.addItem("Все теги")
         filter_row.addWidget(self.tag_filter)
 
-        filter_row.addWidget(BodyLabel("Sort:", self))
+        filter_row.addWidget(BodyLabel("Сортировка:", self))
         self.sort_combo = ComboBox(self)
         self.sort_combo.setMinimumWidth(110)
         for key in _SORT_KEYS:
             self.sort_combo.addItem(key)
         filter_row.addWidget(self.sort_combo)
 
-        self.sort_order_btn = PushButton("Asc", self)
-        self.sort_order_btn.setFixedWidth(50)
+        self.sort_order_btn = PushButton("Возр", self)
+        self.sort_order_btn.setFixedWidth(55)
         filter_row.addWidget(self.sort_order_btn)
 
         root.addLayout(filter_row)
@@ -87,14 +87,14 @@ class NodesPage(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setSpacing(8)
 
-        self.import_btn = PrimaryPushButton("Import from clipboard", self)
-        self.edit_btn = PushButton("Edit", self)
-        self.bulk_edit_btn = PushButton("Bulk edit", self)
-        self.ping_btn = PushButton("Ping selected", self)
-        self.ping_all_btn = PushButton("Ping all", self)
-        self.export_outbound_btn = PushButton("Export outbound JSON", self)
-        self.export_runtime_btn = PushButton("Export runtime config", self)
-        self.delete_btn = PushButton("Delete selected", self)
+        self.import_btn = PrimaryPushButton("Импорт из буфера", self)
+        self.edit_btn = PushButton("Редактировать", self)
+        self.bulk_edit_btn = PushButton("Массовое редактирование", self)
+        self.ping_btn = PushButton("Пинг выбранных", self)
+        self.ping_all_btn = PushButton("Пинг всех", self)
+        self.export_outbound_btn = PushButton("Экспорт outbound JSON", self)
+        self.export_runtime_btn = PushButton("Экспорт runtime конфига", self)
+        self.delete_btn = PushButton("Удалить выбранные", self)
 
         toolbar.addWidget(self.import_btn)
         toolbar.addWidget(self.edit_btn)
@@ -111,7 +111,7 @@ class NodesPage(QWidget):
         self.table = TableWidget(self)
         self.table.setColumnCount(8)
         self.table.setHorizontalHeaderLabels(
-            ["Name", "Type", "Server", "Port", "Group", "Tags", "Ping", "Last used"]
+            ["Имя", "Тип", "Сервер", "Порт", "Группа", "Теги", "Пинг", "Последнее использование"]
         )
         vertical_header = cast(QHeaderView, self.table.verticalHeader())
         vertical_header.setVisible(False)
@@ -176,7 +176,7 @@ class NodesPage(QWidget):
 
         self.group_filter.blockSignals(True)
         self.group_filter.clear()
-        self.group_filter.addItem("All Groups")
+        self.group_filter.addItem("Все группы")
         groups = sorted({n.group for n in self._nodes if n.group})
         for g in groups:
             self.group_filter.addItem(g)
@@ -186,7 +186,7 @@ class NodesPage(QWidget):
 
         self.tag_filter.blockSignals(True)
         self.tag_filter.clear()
-        self.tag_filter.addItem("All Tags")
+        self.tag_filter.addItem("Все теги")
         tags: set[str] = set()
         for n in self._nodes:
             tags.update(n.tags)
@@ -205,9 +205,9 @@ class NodesPage(QWidget):
 
         filtered = []
         for node in self._nodes:
-            if group_filter != "All Groups" and node.group != group_filter:
+            if group_filter != "Все группы" and node.group != group_filter:
                 continue
-            if tag_filter != "All Tags" and tag_filter not in node.tags:
+            if tag_filter != "Все теги" and tag_filter not in node.tags:
                 continue
             if query:
                 haystack = " ".join(
@@ -226,7 +226,7 @@ class NodesPage(QWidget):
 
         for row, node in enumerate(filtered):
             self._visible_node_ids.append(node.id)
-            name_item = QTableWidgetItem(node.name or "Unnamed")
+            name_item = QTableWidgetItem(node.name or "Без имени")
             icon = get_flag_icon(node.country_code)
             if icon:
                 name_item.setIcon(icon)
@@ -242,26 +242,26 @@ class NodesPage(QWidget):
 
     @staticmethod
     def _sort_nodes(nodes: list[Node], key: str, ascending: bool) -> list[Node]:
-        if key == "Name":
+        if key == "Имя":
             return sorted(nodes, key=lambda n: n.name.lower(), reverse=not ascending)
-        if key == "Group":
+        if key == "Группа":
             return sorted(nodes, key=lambda n: n.group.lower(), reverse=not ascending)
-        if key == "Protocol":
+        if key == "Протокол":
             return sorted(nodes, key=lambda n: n.scheme.lower(), reverse=not ascending)
-        if key == "Ping":
+        if key == "Пинг":
             none_val = float("inf") if ascending else float("-inf")
             return sorted(
                 nodes,
                 key=lambda n: n.ping_ms if n.ping_ms is not None else none_val,
                 reverse=not ascending,
             )
-        if key == "Last used":
+        if key == "Последнее использование":
             return sorted(nodes, key=lambda n: n.last_used_at or "", reverse=not ascending)
         return nodes
 
     def _toggle_sort_order(self) -> None:
         self._sort_ascending = not self._sort_ascending
-        self.sort_order_btn.setText("Asc" if self._sort_ascending else "Desc")
+        self.sort_order_btn.setText("Возр" if self._sort_ascending else "Убыв")
         self._reload()
 
     # ── Selection helpers ──
@@ -351,31 +351,31 @@ class NodesPage(QWidget):
 
         if count == 1:
             node_id = next(iter(ids))
-            edit_action = Action("Edit", self)
+            edit_action = Action("Редактировать", self)
             edit_action.triggered.connect(lambda: self.edit_node_requested.emit(node_id))
             menu.addAction(edit_action)
 
-            copy_action = Action("Copy link", self)
+            copy_action = Action("Копировать ссылку", self)
             copy_action.triggered.connect(lambda: self._copy_node_link(node_id))
             menu.addAction(copy_action)
         else:
-            copy_action = Action(f"Copy {count} links", self)
+            copy_action = Action(f"Копировать {count} ссылок", self)
             copy_action.triggered.connect(lambda: self._copy_multiple_links(ids))
             menu.addAction(copy_action)
 
-        bulk_action = Action("Bulk edit", self)
+        bulk_action = Action("Массовое редактирование", self)
         bulk_action.triggered.connect(lambda: self.bulk_edit_requested.emit(ids))
         menu.addAction(bulk_action)
 
         menu.addSeparator()
 
-        ping_action = Action(f"Ping ({count})" if count > 1 else "Ping", self)
+        ping_action = Action(f"Пинг ({count})" if count > 1 else "Пинг", self)
         ping_action.triggered.connect(lambda: self.ping_requested.emit(ids))
         menu.addAction(ping_action)
 
         menu.addSeparator()
 
-        delete_label = f"Delete {count} nodes" if count > 1 else "Delete"
+        delete_label = f"Удалить {count} серверов" if count > 1 else "Удалить"
         delete_action = Action(delete_label, self)
         delete_action.triggered.connect(lambda: self.delete_requested.emit(ids))
         menu.addAction(delete_action)

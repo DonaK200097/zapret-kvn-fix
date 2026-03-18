@@ -83,7 +83,7 @@ class _BrowseCard(SettingCard):
         super().__init__(icon, title, content, parent)
         self.edit = LineEdit(self)
         self.edit.setMinimumWidth(380)
-        self.btn = PushButton("Browse", self)
+        self.btn = PushButton("Обзор", self)
         self.hBoxLayout.addWidget(self.edit, 0, Qt.AlignmentFlag.AlignRight)
         self.hBoxLayout.addSpacing(8)
         self.hBoxLayout.addWidget(self.btn, 0, Qt.AlignmentFlag.AlignRight)
@@ -145,21 +145,21 @@ class SettingsPage(QWidget):
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(4)
 
-        root.addWidget(SubtitleLabel("Settings", container))
+        root.addWidget(SubtitleLabel("Настройки", container))
         root.addSpacing(8)
 
         # ============================================================
         # Appearance
         # ============================================================
-        appearance_group = SettingCardGroup("Appearance", container)
+        appearance_group = SettingCardGroup("Внешний вид", container)
 
         self.theme_card = _ComboCard(
-            FIF.BRUSH, "Theme", "Choose light, dark or follow system",
-            [("System", "system"), ("Light", "light"), ("Dark", "dark")],
+            FIF.BRUSH, "Тема", "Выберите светлую, тёмную или системную тему",
+            [("Авто", "system"), ("Светлая", "light"), ("Тёмная", "dark")],
             parent=appearance_group,
         )
         self.accent_card = _ColorCard(
-            FIF.PALETTE, "Accent color", "Choose accent color for UI highlights",
+            FIF.PALETTE, "Цвет акцента", "Выберите цвет акцента для элементов интерфейса",
             parent=appearance_group,
         )
 
@@ -170,29 +170,29 @@ class SettingsPage(QWidget):
         # ============================================================
         # Network
         # ============================================================
-        network_group = SettingCardGroup("Network", container)
+        network_group = SettingCardGroup("Сеть", container)
 
         self.socks_card = _SpinCard(
-            FIF.CONNECT, "SOCKS port", "Local SOCKS5 proxy port",
+            FIF.CONNECT, "Порт SOCKS", "Локальный порт SOCKS5 прокси",
             parent=network_group,
         )
         self.http_card = _SpinCard(
-            FIF.GLOBE, "HTTP port", "Local HTTP proxy port",
+            FIF.GLOBE, "Порт HTTP", "Локальный порт HTTP прокси",
             parent=network_group,
         )
         self.proxy_card = SwitchSettingCard(
-            FIF.GLOBE, "Enable system proxy",
-            "Automatically configure Windows proxy settings when connected",
+            FIF.GLOBE, "Системный прокси",
+            "Автоматически настраивать системный прокси Windows при подключении",
             parent=network_group,
         )
         self.tun_card = SwitchSettingCard(
-            FIF.WIFI, "TUN mode (VPN)",
-            "Route all system traffic via virtual adapter. Requires Administrator.",
+            FIF.WIFI, "Режим TUN (VPN)",
+            "Направить весь трафик через виртуальный адаптер. Требуются права администратора.",
             parent=network_group,
         )
         self.reconnect_card = SwitchSettingCard(
-            FIF.SYNC, "Reconnect on network change",
-            "Automatically reconnect when your network adapter changes",
+            FIF.SYNC, "Переподключение при смене сети",
+            "Автоматически переподключаться при смене сетевого адаптера",
             parent=network_group,
         )
 
@@ -206,14 +206,14 @@ class SettingsPage(QWidget):
         # ============================================================
         # Core paths
         # ============================================================
-        paths_group = SettingCardGroup("Core paths", container)
+        paths_group = SettingCardGroup("Пути к ядрам", container)
 
         self.xray_path_card = _BrowseCard(
-            FIF.COMMAND_PROMPT, "Xray core path", "Relative paths are resolved from the app folder",
+            FIF.COMMAND_PROMPT, "Путь к Xray", "Относительные пути разрешаются от папки приложения",
             parent=paths_group,
         )
         self.singbox_path_card = _BrowseCard(
-            FIF.COMMAND_PROMPT, "Sing-box path", "Optional; relative paths are resolved from the app folder",
+            FIF.COMMAND_PROMPT, "Путь к sing-box", "Необязательно; относительные пути разрешаются от папки приложения",
             parent=paths_group,
         )
 
@@ -224,16 +224,16 @@ class SettingsPage(QWidget):
         # ============================================================
         # Startup
         # ============================================================
-        startup_group = SettingCardGroup("Startup", container)
+        startup_group = SettingCardGroup("Запуск", container)
 
         self.start_min_card = SwitchSettingCard(
-            FIF.MINIMIZE, "Start minimized",
-            "Launch the app hidden in system tray",
+            FIF.MINIMIZE, "Запуск в свёрнутом виде",
+            "Запускать приложение свёрнутым в системный трей",
             parent=startup_group,
         )
         self.launch_card = SwitchSettingCard(
-            FIF.POWER_BUTTON, "Run on Windows startup",
-            "Start the app automatically when you log in",
+            FIF.POWER_BUTTON, "Запуск при старте Windows",
+            "Автоматически запускать приложение при входе в систему",
             parent=startup_group,
         )
 
@@ -244,21 +244,21 @@ class SettingsPage(QWidget):
         # ============================================================
         # Updates
         # ============================================================
-        updates_group = SettingCardGroup("Updates", container)
+        updates_group = SettingCardGroup("Обновления", container)
 
         self.check_updates_card = SwitchSettingCard(
-            FIF.UPDATE, "Check app updates",
-            "Periodically check for new app versions on startup",
+            FIF.UPDATE, "Проверять обновления",
+            "Периодически проверять наличие новых версий при запуске",
             parent=updates_group,
         )
         self.allow_updates_card = SwitchSettingCard(
-            FIF.DOWNLOAD, "Allow updates",
-            "Enable downloading and installing app updates",
+            FIF.DOWNLOAD, "Разрешить обновления",
+            "Разрешить загрузку и установку обновлений приложения",
             parent=updates_group,
         )
         self.xray_auto_update_card = SwitchSettingCard(
-            FIF.CLOUD_DOWNLOAD, "Auto update Xray core",
-            "Automatically update Xray core binary on startup",
+            FIF.CLOUD_DOWNLOAD, "Автообновление ядра Xray",
+            "Автоматически обновлять ядро Xray при запуске",
             parent=updates_group,
         )
 
@@ -270,23 +270,23 @@ class SettingsPage(QWidget):
         # ============================================================
         # Data
         # ============================================================
-        data_group = SettingCardGroup("Data", container)
+        data_group = SettingCardGroup("Данные", container)
 
         self.encryption_card = _PasswordActionCard(
-            FIF.FINGERPRINT, "Encryption passphrase",
-            "Protect state file with a passphrase",
-            placeholder="Enter passphrase",
-            buttons=["Set encryption", "Disable encryption"],
+            FIF.FINGERPRINT, "Пароль шифрования",
+            "Защитить файл состояния паролем",
+            placeholder="Введите пароль",
+            buttons=["Включить шифрование", "Отключить шифрование"],
             parent=data_group,
         )
         self.export_backup_card = PushSettingCard(
-            "Export", FIF.SAVE, "Export backup",
-            "Export full application state to a file",
+            "Экспорт", FIF.SAVE, "Экспорт резервной копии",
+            "Экспортировать полное состояние приложения в файл",
             parent=data_group,
         )
         self.import_backup_card = PushSettingCard(
-            "Import", FIF.FOLDER, "Import backup",
-            "Restore application state from a backup file",
+            "Импорт", FIF.FOLDER, "Импорт резервной копии",
+            "Восстановить состояние приложения из резервной копии",
             parent=data_group,
         )
 
@@ -298,18 +298,18 @@ class SettingsPage(QWidget):
         # ============================================================
         # Security
         # ============================================================
-        security_group = SettingCardGroup("Security", container)
+        security_group = SettingCardGroup("Безопасность", container)
 
         self.password_card = _PasswordActionCard(
-            FIF.CERTIFICATE, "Master password",
-            "Set a password to lock the app",
-            placeholder="Set new password",
-            buttons=["Set password", "Disable password", "Lock now"],
+            FIF.CERTIFICATE, "Мастер-пароль",
+            "Установите пароль для блокировки приложения",
+            placeholder="Введите новый пароль",
+            buttons=["Установить пароль", "Отключить пароль", "Заблокировать"],
             parent=security_group,
         )
         self.auto_lock_card = _SpinCard(
-            FIF.STOP_WATCH, "Auto lock (minutes)",
-            "Lock the app after a period of inactivity",
+            FIF.STOP_WATCH, "Автоблокировка (минуты)",
+            "Блокировать приложение после периода бездействия",
             min_val=1, max_val=120, parent=security_group,
         )
 
@@ -420,7 +420,7 @@ class SettingsPage(QWidget):
         )
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select xray.exe",
+            "Выберите xray.exe",
             str(current_path or XRAY_PATH_DEFAULT),
             "xray.exe (xray.exe)",
         )
@@ -443,7 +443,7 @@ class SettingsPage(QWidget):
         )
         file_path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select sing-box.exe",
+            "Выберите sing-box.exe",
             str(current_path or SINGBOX_PATH_DEFAULT),
             "sing-box.exe (sing-box.exe)",
         )

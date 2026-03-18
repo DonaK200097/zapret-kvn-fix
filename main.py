@@ -111,7 +111,7 @@ def _setup_bootstrap_logging() -> None:
 
 
 def _fatal_error_message() -> str:
-    return f"zapret kvn failed to start.\n\nDetails were written to:\n{STARTUP_LOG_PATH}"
+    return f"zapret kvn не удалось запустить.\n\nПодробности записаны в:\n{STARTUP_LOG_PATH}"
 
 
 def _show_fatal_message_box() -> None:
@@ -201,9 +201,9 @@ def _hide_console_if_needed() -> None:
 def _enforce_frozen() -> None:
     if not getattr(sys, "frozen", False):
         raise SystemExit(
-            "ERROR: Direct execution is not supported.\n"
-            "Build the app first:  python build.py\n"
-            "Then run:             dist\\ZapretKVN\\ZapretKVN.exe"
+            "ОШИБКА: Прямой запуск не поддерживается.\n"
+            "Сначала соберите приложение:  python build.py\n"
+            "Затем запустите:              dist\\ZapretKVN\\ZapretKVN.exe"
         )
 
 

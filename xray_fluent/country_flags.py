@@ -7,6 +7,8 @@ import re
 import socket
 import urllib.request
 
+from .http_utils import urlopen as _urlopen
+
 from PyQt6.QtCore import QRectF, QThread, Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPainter, QPainterPath, QPixmap
 
@@ -386,7 +388,7 @@ class CountryResolver(QThread):
                     data=payload,
                     headers={"Content-Type": "application/json"},
                 )
-                with urllib.request.urlopen(req, timeout=10) as resp:
+                with _urlopen(req, timeout=10) as resp:
                     data = json.loads(resp.read())
                 for item in data:
                     cc = item.get("countryCode", "")

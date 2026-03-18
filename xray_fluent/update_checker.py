@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-from urllib.request import Request, urlopen
+from urllib.request import Request
+
+from .http_utils import urlopen
 
 
 @dataclass(slots=True)

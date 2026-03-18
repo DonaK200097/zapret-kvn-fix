@@ -7,7 +7,7 @@ from qfluentwidgets import BodyLabel, EditableComboBox, LineEdit, PrimaryPushBut
 class BulkEditDialog(QDialog):
     def __init__(self, count: int, existing_groups: list[str], parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Bulk Edit Nodes")
+        self.setWindowTitle("Массовое редактирование")
         self.setModal(True)
         self.setMinimumWidth(420)
 
@@ -15,30 +15,30 @@ class BulkEditDialog(QDialog):
         root.setContentsMargins(20, 20, 20, 20)
         root.setSpacing(10)
 
-        root.addWidget(SubtitleLabel("Bulk Edit", self))
-        root.addWidget(BodyLabel(f"Editing {count} selected node(s)", self))
+        root.addWidget(SubtitleLabel("Массовое редактирование", self))
+        root.addWidget(BodyLabel(f"Выбрано нод: {count}", self))
 
-        root.addWidget(BodyLabel("Move to group (empty = skip)", self))
+        root.addWidget(BodyLabel("Переместить в группу (пусто = пропустить)", self))
         self.group_combo = EditableComboBox(self)
         for g in existing_groups:
             self.group_combo.addItem(g)
         self.group_combo.setText("")
         root.addWidget(self.group_combo)
 
-        root.addWidget(BodyLabel("Add tags (comma-separated, empty = skip)", self))
+        root.addWidget(BodyLabel("Добавить теги (через запятую, пусто = пропустить)", self))
         self.add_tags_edit = LineEdit(self)
-        self.add_tags_edit.setPlaceholderText("tag1, tag2")
+        self.add_tags_edit.setPlaceholderText("тег1, тег2")
         root.addWidget(self.add_tags_edit)
 
-        root.addWidget(BodyLabel("Remove tags (comma-separated, empty = skip)", self))
+        root.addWidget(BodyLabel("Удалить теги (через запятую, пусто = пропустить)", self))
         self.remove_tags_edit = LineEdit(self)
-        self.remove_tags_edit.setPlaceholderText("tag1, tag2")
+        self.remove_tags_edit.setPlaceholderText("тег1, тег2")
         root.addWidget(self.remove_tags_edit)
 
         row = QHBoxLayout()
         row.addStretch(1)
-        self.cancel_btn = PushButton("Cancel", self)
-        self.apply_btn = PrimaryPushButton("Apply", self)
+        self.cancel_btn = PushButton("Отмена", self)
+        self.apply_btn = PrimaryPushButton("Применить", self)
         row.addWidget(self.cancel_btn)
         row.addWidget(self.apply_btn)
         root.addLayout(row)

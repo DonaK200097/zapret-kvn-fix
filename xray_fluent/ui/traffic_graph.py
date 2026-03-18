@@ -42,7 +42,7 @@ class TrafficGraphWidget(QWidget):
         self.setMinimumHeight(80)
         self.setMaximumHeight(120)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip("Click to view detailed graph")
+        self.setToolTip("Нажмите для подробного графика")
 
     def add_point(self, down_bps: float, up_bps: float) -> None:
         self._down_data.append(max(0.0, down_bps))
@@ -98,7 +98,7 @@ class TrafficGraphDialog(QDialog):
 
     def __init__(self, down_data: deque[float], up_data: deque[float], parent: QWidget | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Traffic history")
+        self.setWindowTitle("История трафика")
         self.setMinimumSize(700, 420)
         self.resize(800, 480)
 
@@ -175,7 +175,7 @@ def _draw_graph(
                 continue
             x = graph_x + graph_w * sec / max(n - 1, 1)
             ago = n - 1 - sec
-            label = f"-{ago}s" if ago > 0 else "now"
+            label = f"-{ago}с" if ago > 0 else "сейчас"
             painter.drawText(QRectF(x - 20, graph_y + graph_h + 4, 40, 16),
                              Qt.AlignmentFlag.AlignCenter, label)
 
@@ -184,7 +184,7 @@ def _draw_graph(
         font.setPixelSize(12)
         painter.setFont(font)
         painter.drawText(QRectF(graph_x, r.y() + 2, graph_w, 18),
-                         Qt.AlignmentFlag.AlignCenter, "Traffic history")
+                         Qt.AlignmentFlag.AlignCenter, "История трафика")
 
     # draw lines
     _draw_line(painter, graph_x, graph_y, graph_w, graph_h, down_data, max_val, _COLOR_DOWN, compact)
@@ -199,9 +199,9 @@ def _draw_graph(
         ly = graph_y + 2
 
         painter.setPen(_COLOR_DOWN)
-        painter.drawText(QPointF(lx, ly + 9), "↓ Down")
+        painter.drawText(QPointF(lx, ly + 9), "↓ Загрузка")
         painter.setPen(_COLOR_UP)
-        painter.drawText(QPointF(lx + 48, ly + 9), "↑ Up")
+        painter.drawText(QPointF(lx + 64, ly + 9), "↑ Выгрузка")
     else:
         font = QFont()
         font.setPixelSize(11)
@@ -213,13 +213,13 @@ def _draw_graph(
         painter.setBrush(_COLOR_DOWN)
         painter.drawRoundedRect(QRectF(lx, ly + 2, 10, 10), 2, 2)
         painter.setPen(_COLOR_DOWN)
-        painter.drawText(QPointF(lx + 14, ly + 11), "Download")
+        painter.drawText(QPointF(lx + 14, ly + 11), "Загрузка")
 
         painter.setPen(Qt.PenStyle.NoPen)
         painter.setBrush(_COLOR_UP)
-        painter.drawRoundedRect(QRectF(lx + 80, ly + 2, 10, 10), 2, 2)
+        painter.drawRoundedRect(QRectF(lx + 86, ly + 2, 10, 10), 2, 2)
         painter.setPen(_COLOR_UP)
-        painter.drawText(QPointF(lx + 94, ly + 11), "Upload")
+        painter.drawText(QPointF(lx + 100, ly + 11), "Выгрузка")
 
 
 def _draw_line(
