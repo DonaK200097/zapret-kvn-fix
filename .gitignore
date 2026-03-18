@@ -9,12 +9,8 @@ build/
 dist/
 *.spec
 
-# Binaries (core/)
-core/*.exe
-core/*.dll
-core/*.dat
-core/*.ps1
-core/*.vbs
+# Core binaries (downloaded by CI)
+core/
 
 # App data
 data/
