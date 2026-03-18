@@ -111,7 +111,7 @@ def _setup_bootstrap_logging() -> None:
 
 
 def _fatal_error_message() -> str:
-    return f"Xray Fluent failed to start.\n\nDetails were written to:\n{STARTUP_LOG_PATH}"
+    return f"zapret kvn failed to start.\n\nDetails were written to:\n{STARTUP_LOG_PATH}"
 
 
 def _show_fatal_message_box() -> None:
@@ -120,7 +120,7 @@ def _show_fatal_message_box() -> None:
     try:
         import ctypes
 
-        ctypes.windll.user32.MessageBoxW(None, _fatal_error_message(), "Xray Fluent", 0x10)
+        ctypes.windll.user32.MessageBoxW(None, _fatal_error_message(), "zapret kvn", 0x10)
     except Exception:
         pass
 
@@ -170,8 +170,8 @@ def _disable_system_proxy_on_exit() -> None:
         _sp.run(["taskkill", "/F", "/IM", "sing-box.exe"], capture_output=True, timeout=5, creationflags=_flags)
         _sp.run(["taskkill", "/F", "/IM", "xray.exe"], capture_output=True, timeout=5, creationflags=_flags)
         r = _sp.run(["netsh", "interface", "show", "interface"], capture_output=True, text=True, timeout=5, creationflags=_flags)
-        if "XrayFluentTUN" in (r.stdout or ""):
-            _sp.run(["netsh", "interface", "set", "interface", "XrayFluentTUN", "admin=disable"], capture_output=True, timeout=5, creationflags=_flags)
+        if "ZapretKVN_TUN" in (r.stdout or ""):
+            _sp.run(["netsh", "interface", "set", "interface", "ZapretKVN_TUN", "admin=disable"], capture_output=True, timeout=5, creationflags=_flags)
             _bootstrap_logger.info("TUN adapter disabled on exit (safety)")
     except Exception:
         pass
@@ -203,7 +203,7 @@ def _enforce_frozen() -> None:
         raise SystemExit(
             "ERROR: Direct execution is not supported.\n"
             "Build the app first:  python build.py\n"
-            "Then run:             dist\\XrayFluent\\XrayFluent.exe"
+            "Then run:             dist\\ZapretKVN\\ZapretKVN.exe"
         )
 
 
@@ -213,7 +213,7 @@ def main() -> int:
     _enforce_frozen()
     _hide_console_if_needed()
 
-    parser = argparse.ArgumentParser(description="Xray Fluent GUI")
+    parser = argparse.ArgumentParser(description="zapret kvn")
     parser.add_argument("--minimized", action="store_true", help="start in tray")
     parser.add_argument(SHOW_CONSOLE_ARG, action="store_true", help="keep console window visible for debugging")
     args = parser.parse_args()

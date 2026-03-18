@@ -4,8 +4,8 @@ from pathlib import Path
 import sys
 
 
-APP_NAME = "Xray Fluent"
-APP_VERSION = "0.1.0"
+APP_NAME = "zapret kvn"
+APP_VERSION = "0.4.0-beta"
 STATE_SCHEMA_VERSION = 1
 
 PROXY_HOST = "127.0.0.1"

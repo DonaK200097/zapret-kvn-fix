@@ -13,7 +13,7 @@ from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 from .constants import BASE_DIR
 
 TUN2SOCKS_PATH_DEFAULT = BASE_DIR / "core" / "tun2socks.exe"
-TUN_DEVICE_NAME = "XrayFluentTUN"
+TUN_DEVICE_NAME = "ZapretKVN_TUN"
 TUN_GW = "172.19.0.1"
 TUN_ADDR = "172.19.0.2"
 TUN_MASK = "255.255.255.252"

@@ -30,7 +30,7 @@ class ConnectivityTestWorker(QThread):
                 )
             )
 
-        request = Request(self._url, headers={"User-Agent": "XrayFluent/0.1"})
+        request = Request(self._url, headers={"User-Agent": "ZapretKVN/0.4"})
         started = time.perf_counter()
         try:
             with opener.open(request, timeout=self._timeout) as response:

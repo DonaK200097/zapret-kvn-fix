@@ -423,7 +423,7 @@ class MainWindow(FluentWindow):
             return True
 
         while True:
-            dialog = PasswordDialog("Unlock Xray Fluent", self)
+            dialog = PasswordDialog("Unlock zapret kvn", self)
             result = dialog.exec()
             if result != int(QDialog.DialogCode.Accepted):
                 if startup:

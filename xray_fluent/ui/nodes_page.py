@@ -5,6 +5,7 @@ from typing import cast
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QCursor, QKeyEvent, QKeySequence, QShortcut
+from PyQt6.QtCore import QSize
 from PyQt6.QtWidgets import QAbstractItemView, QApplication, QHBoxLayout, QHeaderView, QTableWidgetItem, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
@@ -17,6 +18,7 @@ from qfluentwidgets import (
 )
 from qfluentwidgets import RoundMenu, Action
 
+from ..country_flags import get_flag_icon
 from ..models import Node
 
 _SORT_KEYS = ["Name", "Group", "Protocol", "Ping", "Last used"]
@@ -123,6 +125,7 @@ class NodesPage(QWidget):
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.table.setIconSize(QSize(20, 14))
 
         root.addWidget(self.table, 1)
 
@@ -217,12 +220,17 @@ class NodesPage(QWidget):
         sort_key = self.sort_combo.currentText()
         filtered = self._sort_nodes(filtered, sort_key, self._sort_ascending)
 
+        self.table.blockSignals(True)
         self.table.setRowCount(len(filtered))
         self._visible_node_ids = []
 
         for row, node in enumerate(filtered):
             self._visible_node_ids.append(node.id)
-            self.table.setItem(row, 0, QTableWidgetItem(node.name or "Unnamed"))
+            name_item = QTableWidgetItem(node.name or "Unnamed")
+            icon = get_flag_icon(node.country_code)
+            if icon:
+                name_item.setIcon(icon)
+            self.table.setItem(row, 0, name_item)
             self.table.setItem(row, 1, QTableWidgetItem(node.scheme.upper()))
             self.table.setItem(row, 2, QTableWidgetItem(node.server))
             self.table.setItem(row, 3, QTableWidgetItem(str(node.port)))
@@ -230,6 +238,7 @@ class NodesPage(QWidget):
             self.table.setItem(row, 5, QTableWidgetItem(", ".join(node.tags)))
             self.table.setItem(row, 6, QTableWidgetItem("--" if node.ping_ms is None else f"{node.ping_ms} ms"))
             self.table.setItem(row, 7, QTableWidgetItem(self._format_time(node.last_used_at)))
+        self.table.blockSignals(False)
 
     @staticmethod
     def _sort_nodes(nodes: list[Node], key: str, ascending: bool) -> list[Node]:
@@ -321,13 +330,26 @@ class NodesPage(QWidget):
             self.edit_node_requested.emit(self._visible_node_ids[row])
 
     def _on_context_menu(self, pos) -> None:
-        ids = self._selected_ids()
-        if not ids:
+        item = self.table.itemAt(pos)
+        if item is None:
+            return
+        clicked_row = item.row()
+        if clicked_row < 0 or clicked_row >= len(self._visible_node_ids):
             return
 
-        menu = RoundMenu(parent=self)
+        clicked_id = self._visible_node_ids[clicked_row]
+        current_ids = self._selected_ids()
+        if clicked_id not in current_ids:
+            self.table.clearSelection()
+            self.table.selectRow(clicked_row)
+            ids = {clicked_id}
+        else:
+            ids = current_ids
 
-        if len(ids) == 1:
+        menu = RoundMenu(parent=self)
+        count = len(ids)
+
+        if count == 1:
             node_id = next(iter(ids))
             edit_action = Action("Edit", self)
             edit_action.triggered.connect(lambda: self.edit_node_requested.emit(node_id))
@@ -336,23 +358,27 @@ class NodesPage(QWidget):
             copy_action = Action("Copy link", self)
             copy_action.triggered.connect(lambda: self._copy_node_link(node_id))
             menu.addAction(copy_action)
+        else:
+            copy_action = Action(f"Copy {count} links", self)
+            copy_action.triggered.connect(lambda: self._copy_multiple_links(ids))
+            menu.addAction(copy_action)
 
-        if ids:
-            bulk_action = Action("Bulk edit", self)
-            bulk_action.triggered.connect(lambda: self.bulk_edit_requested.emit(ids))
-            menu.addAction(bulk_action)
+        bulk_action = Action("Bulk edit", self)
+        bulk_action.triggered.connect(lambda: self.bulk_edit_requested.emit(ids))
+        menu.addAction(bulk_action)
 
-            menu.addSeparator()
+        menu.addSeparator()
 
-            ping_action = Action("Ping", self)
-            ping_action.triggered.connect(lambda: self.ping_requested.emit(ids))
-            menu.addAction(ping_action)
+        ping_action = Action(f"Ping ({count})" if count > 1 else "Ping", self)
+        ping_action.triggered.connect(lambda: self.ping_requested.emit(ids))
+        menu.addAction(ping_action)
 
-            menu.addSeparator()
+        menu.addSeparator()
 
-            delete_action = Action("Delete", self)
-            delete_action.triggered.connect(lambda: self.delete_requested.emit(ids))
-            menu.addAction(delete_action)
+        delete_label = f"Delete {count} nodes" if count > 1 else "Delete"
+        delete_action = Action(delete_label, self)
+        delete_action.triggered.connect(lambda: self.delete_requested.emit(ids))
+        menu.addAction(delete_action)
 
         menu.exec(QCursor.pos())
 
@@ -365,6 +391,33 @@ class NodesPage(QWidget):
                 if clipboard is not None:
                     clipboard.setText(node.link)
                 break
+
+    def _copy_multiple_links(self, node_ids: set[str]) -> None:
+        links: list[str] = []
+        for vid in self._visible_node_ids:
+            if vid in node_ids:
+                for node in self._nodes:
+                    if node.id == vid and node.link:
+                        links.append(node.link)
+                        break
+        if links:
+            clipboard = QApplication.clipboard()
+            if clipboard is not None:
+                clipboard.setText("\n".join(links))
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:
+        if event.key() == Qt.Key.Key_Delete:
+            self._on_delete_selected()
+            return
+        if event.matches(QKeySequence.StandardKey.Copy):
+            ids = self._selected_ids()
+            if ids:
+                if len(ids) == 1:
+                    self._copy_node_link(next(iter(ids)))
+                else:
+                    self._copy_multiple_links(ids)
+            return
+        super().keyPressEvent(event)
 
     @staticmethod
     def _format_time(value: str | None) -> str:

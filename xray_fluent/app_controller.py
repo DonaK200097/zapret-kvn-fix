@@ -8,6 +8,7 @@ from pathlib import Path
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
+from .country_flags import CountryResolver, detect_country
 from .config_builder import build_xray_config
 from .connectivity_test import ConnectivityTestWorker
 from .constants import APP_NAME, LOG_DIR, ROUTING_MODES, SINGBOX_CLASH_API_PORT, XRAY_STATS_API_PORT
@@ -70,6 +71,7 @@ class AppController(QObject):
             handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s", datefmt="%Y-%m-%d %H:%M:%S"))
             self._logger.addHandler(handler)
 
+        self._country_resolver: CountryResolver | None = None
         self._ping_worker: PingWorker | None = None
         self._connectivity_worker: ConnectivityTestWorker | None = None
         self._metrics_worker: LiveMetricsWorker | None = None
@@ -104,10 +106,12 @@ class AppController(QObject):
             self.passphrase_required.emit()
             return False
 
+        self._detect_countries_sync()
         self.nodes_changed.emit(self.state.nodes)
         self.selection_changed.emit(self.selected_node)
         self.routing_changed.emit(self.state.routing)
         self.settings_changed.emit(self.state.settings)
+        QTimer.singleShot(500, self._start_country_ip_resolution)
 
         version = get_xray_version(self.state.settings.xray_path)
         if version:
@@ -139,7 +143,40 @@ class AppController(QObject):
     def save(self) -> None:
         self.storage.save(self.state)
 
+    # ── Country detection helpers ──
+
+    def _detect_countries_sync(self) -> None:
+        changed = False
+        for node in self.state.nodes:
+            if not node.country_code:
+                code = detect_country(node.name, node.server)
+                if code:
+                    node.country_code = code
+                    changed = True
+        if changed:
+            self.save()
+
+    def _start_country_ip_resolution(self) -> None:
+        needs = [(n.id, n.server) for n in self.state.nodes if not n.country_code]
+        if not needs:
+            return
+        self._country_resolver = CountryResolver(needs, parent=self)
+        self._country_resolver.resolved.connect(self._on_countries_resolved)
+        self._country_resolver.start()
+
+    def _on_countries_resolved(self, results: dict[str, str]) -> None:
+        if not results:
+            return
+        for node in self.state.nodes:
+            if node.id in results:
+                node.country_code = results[node.id]
+        self.save()
+        self.nodes_changed.emit(self.state.nodes)
+
     def shutdown(self) -> None:
+        if self._country_resolver and self._country_resolver.isRunning():
+            self._country_resolver.quit()
+            self._country_resolver.wait(2000)
         if self._ping_worker and self._ping_worker.isRunning():
             self._ping_worker.cancel()
             self._ping_worker.wait(500)
@@ -176,9 +213,9 @@ class AppController(QObject):
                 capture_output=True, text=True, timeout=5,
                 creationflags=0x08000000,
             )
-            if "XrayFluentTUN" in (result.stdout or ""):
+            if "ZapretKVN_TUN" in (result.stdout or ""):
                 _sp.run(
-                    ["netsh", "interface", "set", "interface", "XrayFluentTUN", "admin=disable"],
+                    ["netsh", "interface", "set", "interface", "ZapretKVN_TUN", "admin=disable"],
                     capture_output=True, timeout=5,
                     creationflags=0x08000000,
                 )
@@ -221,6 +258,8 @@ class AppController(QObject):
         for node in nodes:
             if node.link in existing_links:
                 continue
+            if not node.country_code:
+                node.country_code = detect_country(node.name, node.server)
             self.state.nodes.append(node)
             existing_links.add(node.link)
             if first_new_id is None:
@@ -235,6 +274,7 @@ class AppController(QObject):
         self.nodes_changed.emit(self.state.nodes)
         self.selection_changed.emit(self.selected_node)
         self.save()
+        QTimer.singleShot(500, self._start_country_ip_resolution)
 
         if added:
             # In TUN mode, hot-swap xray instead of full reconnect

@@ -1,8 +1,39 @@
+# Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
+
+# PyInstaller
 build/
 dist/
 dist2/
 dist3/
 *.spec
+
+# Binaries (core/)
+core/*.exe
+core/*.dll
+core/*.dat
+core/*.ps1
+core/*.vbs
+
+# App data
+data/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Logs
+*.log
+
+# Archives
+*.zip

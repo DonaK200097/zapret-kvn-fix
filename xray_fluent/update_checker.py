@@ -18,7 +18,7 @@ def check_update(feed_url: str, channel: str = "stable", timeout: float = 5.0) -
     if not feed_url:
         return None
 
-    request = Request(feed_url, headers={"User-Agent": "XrayFluent/0.1"})
+    request = Request(feed_url, headers={"User-Agent": "ZapretKVN/0.4"})
     with urlopen(request, timeout=timeout) as response:
         payload = json.loads(response.read().decode("utf-8"))
 

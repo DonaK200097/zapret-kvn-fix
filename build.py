@@ -22,16 +22,16 @@ VENV_DIR = ROOT / ".venv"
 VENV_PYTHON = VENV_DIR / "Scripts" / "python.exe"
 VENV_PIP = VENV_DIR / "Scripts" / "pip.exe"
 
+APP_NAME = "ZapretKVN"
+DEBUG_LAUNCHER_NAME = "Run ZapretKVN Debug.bat"
+
 DIST_DIR = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
-APP_DIR = DIST_DIR / "XrayFluent"
-ZIP_PATH = DIST_DIR / "XrayFluent-portable.zip"
+APP_DIR = DIST_DIR / APP_NAME
+ZIP_PATH = DIST_DIR / f"{APP_NAME}-portable.zip"
 
 MANIFEST = ROOT / "uac_admin.manifest"
 CORE_DIR = ROOT / "core"
-
-APP_NAME = "XrayFluent"
-DEBUG_LAUNCHER_NAME = "Run XrayFluent Debug.bat"
 
 
 def _print(msg: str) -> None:
@@ -49,10 +49,10 @@ def write_debug_launcher() -> None:
         "@echo off\r\n"
         "setlocal\r\n"
         "set XRAY_FLUENT_SHOW_CONSOLE=1\r\n"
-        "echo Launching Xray Fluent in debug mode...\r\n"
+        "echo Launching zapret kvn in debug mode...\r\n"
         "echo Startup log: %~dp0data\\logs\\startup.log\r\n"
         "echo.\r\n"
-        '"%~dp0XrayFluent.exe" --show-console\r\n'
+        '"%~dp0ZapretKVN.exe" --show-console\r\n'
         "set EXIT_CODE=%ERRORLEVEL%\r\n"
         "echo.\r\n"
         "echo Exit code: %EXIT_CODE%\r\n"

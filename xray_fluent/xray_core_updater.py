@@ -77,7 +77,7 @@ def _normalize_channel(value: str) -> str:
 
 
 def _request_json(url: str) -> object:
-    request = Request(url, headers={"User-Agent": "XrayFluent/0.1"})
+    request = Request(url, headers={"User-Agent": "ZapretKVN/0.4"})
     with urlopen(request, timeout=12) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -124,7 +124,7 @@ def _extract_digest(value: str) -> str:
 
 
 def _fetch_dgst_hash(url: str) -> str:
-    request = Request(url, headers={"User-Agent": "XrayFluent/0.1"})
+    request = Request(url, headers={"User-Agent": "ZapretKVN/0.4"})
     with urlopen(request, timeout=12) as response:
         body = response.read().decode("utf-8", errors="replace")
     return _extract_digest(body)
@@ -174,7 +174,7 @@ def resolve_xray_release(channel: str, feed_url: str = "") -> XrayCoreRelease | 
 
 def _download_file(url: str, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
-    request = Request(url, headers={"User-Agent": "XrayFluent/0.1"})
+    request = Request(url, headers={"User-Agent": "ZapretKVN/0.4"})
     with urlopen(request, timeout=60) as response, open(destination, "wb") as file:
         shutil.copyfileobj(response, file)
 
