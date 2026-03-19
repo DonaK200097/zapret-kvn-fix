@@ -32,6 +32,7 @@ ZIP_PATH = DIST_DIR / f"{APP_NAME}-portable.zip"
 
 MANIFEST = ROOT / "uac_admin.manifest"
 CORE_DIR = ROOT / "core"
+ZAPRET_DIR = ROOT / "zapret"
 
 
 def _print(msg: str) -> None:
@@ -151,6 +152,14 @@ def build_exe() -> None:
         shutil.rmtree(dst_core)
     _print(f"Copying core -> {dst_core}")
     shutil.copytree(str(CORE_DIR), str(dst_core))
+
+    # Copy zapret/ into dist
+    dst_zapret = APP_DIR / "zapret"
+    if dst_zapret.exists():
+        shutil.rmtree(dst_zapret)
+    if ZAPRET_DIR.is_dir():
+        _print(f"Copying zapret -> {dst_zapret}")
+        shutil.copytree(str(ZAPRET_DIR), str(dst_zapret))
 
     write_debug_launcher()
 

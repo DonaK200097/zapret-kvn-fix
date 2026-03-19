@@ -485,6 +485,7 @@ class MainWindow(FluentWindow):
 
         self._update_downloader = UpdateDownloader(update, proxy_url=proxy_url, parent=self)
         self._update_downloader.progress.connect(self.updates_page.show_download_progress)
+        self._update_downloader.status.connect(self.updates_page.set_app_status)
         self._update_downloader.finished_ok.connect(self._on_update_ready)
         self._update_downloader.error.connect(self._on_update_error)
         self._update_downloader.start()
@@ -495,9 +496,10 @@ class MainWindow(FluentWindow):
         QTimer.singleShot(1500, lambda: QApplication.quit())
 
     def _on_update_error(self, err: str) -> None:
+        self._update_in_progress = False
         self.updates_page.show_idle()
-        self.updates_page.set_app_status(f"Ошибка обновления: {err}")
-        self._show_status("error", f"Ошибка обновления: {err}")
+        self.updates_page.set_app_status(f"Ошибка: {err}")
+        self._show_status("error", err)
 
     def _apply_theme(self, theme_name: str, accent_color: str) -> None:
         normalized = theme_name.lower().strip()

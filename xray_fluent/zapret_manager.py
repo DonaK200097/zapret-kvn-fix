@@ -55,6 +55,17 @@ class ZapretManager(QObject):
     def preset_path(name: str) -> Path:
         return PRESETS_DIR / f"{name}.txt"
 
+    @staticmethod
+    def _parse_preset_args(preset: Path) -> list[str]:
+        """Read preset file and return list of arguments (skip comments/blanks)."""
+        args: list[str] = []
+        text = preset.read_text(encoding="utf-8", errors="replace")
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped and not stripped.startswith("#"):
+                args.append(stripped)
+        return args
+
     def start(self, preset_name: str) -> None:
         if self.running:
             self.stop()
@@ -69,18 +80,22 @@ class ZapretManager(QObject):
             self.error.emit(f"Пресет не найден: {preset}")
             return
 
-        # Relative preset path from zapret dir
-        rel_preset = preset.relative_to(ZAPRET_DIR)
+        # Parse preset and pass args directly (winws2 @file can't handle spaces in path)
+        args = self._parse_preset_args(preset)
+        if not args:
+            self.error.emit(f"Пресет пустой: {preset_name}")
+            return
 
         self._process = QProcess(self)
         self._process.setProgram(str(exe))
-        self._process.setArguments([f"@{rel_preset}"])
+        self._process.setArguments(args)
         self._process.setWorkingDirectory(str(ZAPRET_DIR))
         self._process.readyReadStandardOutput.connect(self._on_stdout)
         self._process.readyReadStandardError.connect(self._on_stderr)
         self._process.finished.connect(self._on_finished)
 
-        log.info("zapret start: %s @%s", exe.name, rel_preset)
+        log.info("zapret start: %s [%s] (%d args)", exe.name, preset_name, len(args))
+        self.log_line.emit(f"[zapret] Запуск: {preset_name} ({len(args)} аргументов)")
         self._process.start()
 
         if not self._process.waitForStarted(5000):
@@ -106,6 +121,21 @@ class ZapretManager(QObject):
 
     # ── internals ───────────────────────────────────────────────
 
+    def _drain_output(self) -> list[str]:
+        """Read any remaining stdout/stderr from the process."""
+        lines: list[str] = []
+        if self._process is None:
+            return lines
+        for reader in (self._process.readAllStandardOutput,
+                       self._process.readAllStandardError):
+            data = reader().data()
+            if data:
+                for line in data.decode("utf-8", errors="replace").splitlines():
+                    stripped = line.strip()
+                    if stripped:
+                        lines.append(stripped)
+        return lines
+
     def _on_stdout(self) -> None:
         if self._process is None:
             return
@@ -124,7 +154,23 @@ class ZapretManager(QObject):
 
     def _on_finished(self, exit_code: int, exit_status: QProcess.ExitStatus) -> None:
         self._health_timer.stop()
+
+        # Drain any buffered output before dropping the process reference
+        remaining = self._drain_output()
+        for line in remaining:
+            self.log_line.emit(f"[zapret] {line}")
+
         log.info("zapret finished: code=%d status=%s", exit_code, exit_status.name)
+
+        if exit_code != 0 or exit_status == QProcess.ExitStatus.CrashExit:
+            detail = "\n".join(remaining) if remaining else "нет вывода"
+            self.log_line.emit(
+                f"[zapret] Процесс завершился с кодом {exit_code}"
+            )
+            self.error.emit(
+                f"winws2 завершился с кодом {exit_code}\n{detail}"
+            )
+
         self._process = None
         self.stopped.emit()
 

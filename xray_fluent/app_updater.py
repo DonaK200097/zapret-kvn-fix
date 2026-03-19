@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -83,10 +84,16 @@ class UpdateChecker(QThread):
             self.result.emit(None)
 
 
+_log = logging.getLogger(__name__)
+
+_DOWNLOAD_TIMEOUT = 30  # seconds — per socket operation (connect + each read)
+
+
 class UpdateDownloader(QThread):
     """Download and extract update, then launch restart script."""
 
-    progress = pyqtSignal(int)  # percent 0-100
+    progress = pyqtSignal(int)       # percent 0-100
+    status = pyqtSignal(str)         # human-readable status message
     finished_ok = pyqtSignal()
     error = pyqtSignal(str)
 
@@ -95,32 +102,88 @@ class UpdateDownloader(QThread):
         self._update = update
         self._proxy_url = proxy_url
 
+    # ── download helper ─────────────────────────────────────────
+
+    def _download(self, zip_path: Path, proxy_url: str | None) -> None:
+        """Download update zip. Raises on failure/stall.
+
+        Socket timeout (_DOWNLOAD_TIMEOUT) applies to each read() call,
+        so a dead proxy will raise within 30 s instead of hanging forever.
+        """
+        req = Request(self._update.download_url, headers={"User-Agent": USER_AGENT})
+        if proxy_url:
+            handler = urllib.request.ProxyHandler({"http": proxy_url, "https": proxy_url})
+            opener = build_opener(handler)
+        else:
+            opener = build_opener()
+
+        with opener.open(req, timeout=_DOWNLOAD_TIMEOUT) as resp:
+            total = int(resp.headers.get("Content-Length", 0))
+            downloaded = 0
+
+            with open(zip_path, "wb") as f:
+                while True:
+                    chunk = resp.read(256 * 1024)
+                    if not chunk:
+                        if downloaded == 0:
+                            raise TimeoutError("Сервер не отдаёт данные")
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total > 0:
+                        self.progress.emit(int(downloaded * 100 / total))
+
+    # ── main thread entry ───────────────────────────────────────
+
     def run(self) -> None:
         try:
             tmp_dir = Path(tempfile.mkdtemp(prefix="zapretkvn_update_"))
             zip_path = tmp_dir / "update.zip"
 
-            # Download (use proxy if available)
-            req = Request(self._update.download_url, headers={"User-Agent": USER_AGENT})
+            downloaded_ok = False
+
+            # Attempt 1: through proxy (if available)
             if self._proxy_url:
-                handler = urllib.request.ProxyHandler({"http": self._proxy_url, "https": self._proxy_url})
-                opener = build_opener(handler)
-            else:
-                opener = build_opener()
-            with opener.open(req, timeout=120) as resp:
-                total = int(resp.headers.get("Content-Length", 0))
-                downloaded = 0
-                with open(zip_path, "wb") as f:
-                    while True:
-                        chunk = resp.read(256 * 1024)
-                        if not chunk:
-                            break
-                        f.write(chunk)
-                        downloaded += len(chunk)
-                        if total > 0:
-                            self.progress.emit(int(downloaded * 100 / total))
+                self.status.emit("Загрузка через прокси...")
+                try:
+                    self._download(zip_path, self._proxy_url)
+                    downloaded_ok = True
+                except Exception as exc:
+                    _log.warning("Proxy download failed: %s", exc)
+                    self.status.emit(
+                        "Прокси-сервер недоступен, пробую напрямую..."
+                    )
+                    self.progress.emit(0)
+                    # clean partial file
+                    if zip_path.exists():
+                        zip_path.unlink()
+
+            # Attempt 2: direct (no proxy)
+            if not downloaded_ok:
+                self.status.emit("Загрузка напрямую...")
+                try:
+                    self._download(zip_path, None)
+                    downloaded_ok = True
+                except Exception as exc:
+                    _log.warning("Direct download failed: %s", exc)
+
+            if not downloaded_ok:
+                msg = (
+                    "Не удалось скачать обновление.\n"
+                    "Переключитесь на рабочий сервер и попробуйте снова."
+                )
+                if self._proxy_url:
+                    msg = (
+                        "Не удалось скачать обновление ни через прокси, ни напрямую.\n"
+                        "Переключитесь на рабочий сервер и попробуйте снова."
+                    )
+                self.error.emit(msg)
+                # cleanup
+                shutil.rmtree(tmp_dir, ignore_errors=True)
+                return
 
             self.progress.emit(100)
+            self.status.emit("Распаковка...")
 
             # Extract
             extract_dir = tmp_dir / "extracted"
