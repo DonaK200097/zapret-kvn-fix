@@ -37,3 +37,9 @@ XRAY_PATH_DEFAULT = BASE_DIR / "core" / "xray.exe"
 SINGBOX_CONFIG_FILE = RUNTIME_DIR / "singbox_config.json"
 SINGBOX_PATH_DEFAULT = BASE_DIR / "core" / "sing-box.exe"
 SINGBOX_CLASH_API_PORT = 19090
+
+SPEED_TEST_URL = "https://speedtest.selectel.ru/100MB"
+SPEED_TEST_TIMEOUT = 20  # seconds per single measurement
+SPEED_TEST_ROUNDS = 3    # number of measurements per node (best avg of N-1)
+SPEED_TEST_TEMP_SOCKS_PORT = 19100
+SPEED_TEST_TEMP_HTTP_PORT = 19101

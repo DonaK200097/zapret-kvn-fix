@@ -3,31 +3,45 @@ from __future__ import annotations
 from datetime import datetime
 from typing import cast
 
-from PyQt6.QtCore import Qt, pyqtSignal
-from PyQt6.QtGui import QCursor, QKeyEvent, QKeySequence, QShortcut
-from PyQt6.QtCore import QSize
-from PyQt6.QtWidgets import QAbstractItemView, QApplication, QHBoxLayout, QHeaderView, QTableWidgetItem, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtGui import QBrush, QColor, QCursor, QKeyEvent, QKeySequence, QShortcut
+from PyQt6.QtWidgets import (
+    QAbstractItemView, QApplication, QHBoxLayout, QHeaderView,
+    QStackedWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+)
 from qfluentwidgets import (
-    BodyLabel,
     ComboBox,
-    PrimaryPushButton,
-    PushButton,
+    FluentIcon as FIF,
+    PrimaryToolButton,
     SearchLineEdit,
     SubtitleLabel,
     TableWidget,
+    TransparentToolButton,
+    VerticalSeparator,
 )
 from qfluentwidgets import RoundMenu, Action
 
 from ..country_flags import get_flag_icon
 from ..models import Node
+from .node_detail_widget import NodeDetailWidget
 
-_SORT_KEYS = ["Имя", "Группа", "Протокол", "Пинг", "Последнее использование"]
+_SORT_KEYS = ["Имя", "Группа", "Тип", "Пинг", "Скорость", "Последнее использование"]
+
+_COLUMN_SORT_MAP = {
+    0: "Имя",
+    1: "Тип",
+    4: "Группа",
+    6: "Пинг",
+    7: "Скорость",
+    9: "Последнее использование",
+}
 
 
 class NodesPage(QWidget):
     import_clipboard_requested = pyqtSignal()
     delete_requested = pyqtSignal(object)          # emits set[str] of node IDs
     ping_requested = pyqtSignal(object)             # emits set[str] or empty set
+    speed_test_requested = pyqtSignal(object)       # emits set[str] of node IDs (or empty set for all)
     export_outbound_json_requested = pyqtSignal(str)
     export_runtime_json_requested = pyqtSignal(str)
     selected_node_changed = pyqtSignal(str)
@@ -43,7 +57,15 @@ class NodesPage(QWidget):
         self._visible_node_ids: list[str] = []
         self._sort_ascending = True
 
-        root = QVBoxLayout(self)
+        # Stack: page 0 = server list, page 1 = node detail
+        self._stack = QStackedWidget(self)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.addWidget(self._stack)
+
+        # --- Page 0: Server list ---
+        list_page = QWidget()
+        root = QVBoxLayout(list_page)
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
 
@@ -58,60 +80,94 @@ class NodesPage(QWidget):
         self.search_edit.setPlaceholderText("Поиск серверов")
         filter_row.addWidget(self.search_edit, 1)
 
-        filter_row.addWidget(BodyLabel("Группа:", self))
         self.group_filter = ComboBox(self)
         self.group_filter.setMinimumWidth(120)
         self.group_filter.addItem("Все группы")
         filter_row.addWidget(self.group_filter)
 
-        filter_row.addWidget(BodyLabel("Тег:", self))
         self.tag_filter = ComboBox(self)
         self.tag_filter.setMinimumWidth(120)
         self.tag_filter.addItem("Все теги")
         filter_row.addWidget(self.tag_filter)
 
-        filter_row.addWidget(BodyLabel("Сортировка:", self))
+        filter_row.addWidget(VerticalSeparator(self))
+
         self.sort_combo = ComboBox(self)
         self.sort_combo.setMinimumWidth(110)
         for key in _SORT_KEYS:
             self.sort_combo.addItem(key)
         filter_row.addWidget(self.sort_combo)
 
-        self.sort_order_btn = PushButton("Возр", self)
-        self.sort_order_btn.setFixedWidth(55)
+        self.sort_order_btn = TransparentToolButton(FIF.UP, self)
+        self.sort_order_btn.setToolTip("Порядок сортировки")
         filter_row.addWidget(self.sort_order_btn)
 
         root.addLayout(filter_row)
 
         # --- Action toolbar ---
         toolbar = QHBoxLayout()
-        toolbar.setSpacing(8)
+        toolbar.setSpacing(4)
 
-        self.import_btn = PrimaryPushButton("Импорт из буфера", self)
-        self.edit_btn = PushButton("Редактировать", self)
-        self.bulk_edit_btn = PushButton("Массовое редактирование", self)
-        self.ping_btn = PushButton("Пинг выбранных", self)
-        self.ping_all_btn = PushButton("Пинг всех", self)
-        self.export_outbound_btn = PushButton("Экспорт outbound JSON", self)
-        self.export_runtime_btn = PushButton("Экспорт runtime конфига", self)
-        self.delete_btn = PushButton("Удалить выбранные", self)
-
+        self.import_btn = PrimaryToolButton(FIF.ADD, self)
+        self.import_btn.setToolTip("Импорт из буфера (Ctrl+V)")
         toolbar.addWidget(self.import_btn)
+
+        toolbar.addWidget(VerticalSeparator(self))
+
+        self.edit_btn = TransparentToolButton(FIF.EDIT, self)
+        self.edit_btn.setToolTip("Редактировать")
         toolbar.addWidget(self.edit_btn)
+
+        self.bulk_edit_btn = TransparentToolButton(FIF.CHECKBOX, self)
+        self.bulk_edit_btn.setToolTip("Массовое редактирование")
+        self.bulk_edit_btn.setVisible(False)
         toolbar.addWidget(self.bulk_edit_btn)
+
+        toolbar.addWidget(VerticalSeparator(self))
+
+        self.ping_btn = TransparentToolButton(FIF.SEND, self)
+        self.ping_btn.setToolTip("Пинг выбранных")
         toolbar.addWidget(self.ping_btn)
+
+        self.ping_all_btn = TransparentToolButton(FIF.SYNC, self)
+        self.ping_all_btn.setToolTip("Пинг всех")
         toolbar.addWidget(self.ping_all_btn)
+
+        toolbar.addWidget(VerticalSeparator(self))
+
+        self.speed_test_btn = TransparentToolButton(FIF.SPEED_HIGH, self)
+        self.speed_test_btn.setToolTip("Тест скорости выбранных")
+        toolbar.addWidget(self.speed_test_btn)
+
+        self.speed_test_all_btn = TransparentToolButton(FIF.SPEED_MEDIUM, self)
+        self.speed_test_all_btn.setToolTip("Тест скорости всех")
+        toolbar.addWidget(self.speed_test_all_btn)
+
+        toolbar.addWidget(VerticalSeparator(self))
+
+        self.export_outbound_btn = TransparentToolButton(FIF.SAVE_AS, self)
+        self.export_outbound_btn.setToolTip("Экспорт outbound JSON")
         toolbar.addWidget(self.export_outbound_btn)
+
+        self.export_runtime_btn = TransparentToolButton(FIF.CODE, self)
+        self.export_runtime_btn.setToolTip("Экспорт runtime конфига")
         toolbar.addWidget(self.export_runtime_btn)
+
+        toolbar.addWidget(VerticalSeparator(self))
+
+        self.delete_btn = TransparentToolButton(FIF.DELETE, self)
+        self.delete_btn.setToolTip("Удалить выбранные")
         toolbar.addWidget(self.delete_btn)
+
+        toolbar.addStretch()
 
         root.addLayout(toolbar)
 
         # --- Table ---
         self.table = TableWidget(self)
-        self.table.setColumnCount(8)
+        self.table.setColumnCount(10)
         self.table.setHorizontalHeaderLabels(
-            ["Имя", "Тип", "Сервер", "Порт", "Группа", "Теги", "Пинг", "Последнее использование"]
+            ["Имя", "Тип", "Сервер", "Порт", "Группа", "Теги", "Пинг", "Скорость", "Статус", "Последнее использование"]
         )
         vertical_header = cast(QHeaderView, self.table.verticalHeader())
         vertical_header.setVisible(False)
@@ -121,13 +177,36 @@ class NodesPage(QWidget):
         horizontal_header.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         horizontal_header.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         horizontal_header.setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
+        horizontal_header.setSectionResizeMode(7, QHeaderView.ResizeMode.ResizeToContents)
+        horizontal_header.setSectionResizeMode(8, QHeaderView.ResizeMode.ResizeToContents)
+        horizontal_header.setSectionsClickable(True)
+        horizontal_header.sectionClicked.connect(self._on_header_clicked)
         self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.setIconSize(QSize(20, 14))
 
+        # Prevent deselection on empty area click
+        self.table._orig_mousePressEvent = self.table.mousePressEvent
+        def _no_deselect_mouse_press(event):
+            if event.button() == Qt.MouseButton.LeftButton:
+                index = self.table.indexAt(event.pos())
+                if not index.isValid():
+                    return
+            self.table._orig_mousePressEvent(event)
+        self.table.mousePressEvent = _no_deselect_mouse_press
+
         root.addWidget(self.table, 1)
+
+        self._stack.addWidget(list_page)
+
+        # --- Page 1: Node detail ---
+        self._detail_widget = NodeDetailWidget(self)
+        self._detail_widget.back_requested.connect(self._show_list)
+        self._detail_widget.ping_node_requested.connect(lambda nid: self.ping_requested.emit({nid}))
+        self._detail_widget.speed_test_node_requested.connect(lambda nid: self.speed_test_requested.emit({nid}))
+        self._stack.addWidget(self._detail_widget)
 
         # --- Connections ---
         self.search_edit.textChanged.connect(self._reload)
@@ -142,6 +221,8 @@ class NodesPage(QWidget):
         self.ping_all_btn.clicked.connect(self._on_ping_all)
         self.export_outbound_btn.clicked.connect(self._on_export_outbound)
         self.export_runtime_btn.clicked.connect(self._on_export_runtime)
+        self.speed_test_btn.clicked.connect(self._on_speed_test_selected)
+        self.speed_test_all_btn.clicked.connect(self._on_speed_test_all)
         self.delete_btn.clicked.connect(self._on_delete_selected)
         self.table.itemSelectionChanged.connect(self._emit_selection)
         self.table.doubleClicked.connect(self._on_double_click)
@@ -165,8 +246,39 @@ class NodesPage(QWidget):
             if visible_id != node_id:
                 continue
             text = "--" if ping_ms is None else f"{ping_ms} ms"
-            self.table.setItem(row, 6, QTableWidgetItem(text))
+            item = QTableWidgetItem(text)
+            if ping_ms is not None:
+                item.setToolTip(f"Пинг: {ping_ms} ms")
+            self.table.setItem(row, 6, item)
             break
+
+    def update_speed(self, node_id: str, speed_mbps: float | None) -> None:
+        for row, visible_id in enumerate(self._visible_node_ids):
+            if visible_id != node_id:
+                continue
+            text = "--" if speed_mbps is None else f"{speed_mbps:.1f} MB/s"
+            self.table.setItem(row, 7, QTableWidgetItem(text))
+            break
+
+    def update_alive_status(self, node_id: str, is_alive: bool | None) -> None:
+        node = next((n for n in self._nodes if n.id == node_id), None)
+        for row, visible_id in enumerate(self._visible_node_ids):
+            if visible_id != node_id:
+                continue
+            status_item = self._make_status_item(node) if node else QTableWidgetItem("--")
+            if is_alive == False:
+                red_brush = QBrush(QColor(220, 50, 50))
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    if item:
+                        item.setForeground(red_brush)
+            self.table.setItem(row, 8, status_item)
+            break
+
+    def refresh_detail(self) -> None:
+        """Refresh detail view if it is currently visible."""
+        if self._stack.currentIndex() == 1:
+            self._detail_widget.refresh()
 
     # ── Filter combos ──
 
@@ -237,8 +349,35 @@ class NodesPage(QWidget):
             self.table.setItem(row, 3, QTableWidgetItem(str(node.port)))
             self.table.setItem(row, 4, QTableWidgetItem(node.group))
             self.table.setItem(row, 5, QTableWidgetItem(", ".join(node.tags)))
-            self.table.setItem(row, 6, QTableWidgetItem("--" if node.ping_ms is None else f"{node.ping_ms} ms"))
-            self.table.setItem(row, 7, QTableWidgetItem(self._format_time(node.last_used_at)))
+
+            # Column 6 — Ping
+            ping_text = "--" if node.ping_ms is None else f"{node.ping_ms} ms"
+            ping_item = QTableWidgetItem(ping_text)
+            if node.ping_ms is not None:
+                ping_item.setToolTip(f"Пинг: {node.ping_ms} ms")
+            if node.is_alive == False:
+                ping_item.setForeground(QBrush(QColor(220, 50, 50)))
+            self.table.setItem(row, 6, ping_item)
+
+            # Column 7 — Speed
+            speed_text = "--" if node.speed_mbps is None else f"{node.speed_mbps:.1f} MB/s"
+            self.table.setItem(row, 7, QTableWidgetItem(speed_text))
+
+            # Column 8 — Status
+            status_item = self._make_status_item(node)
+            self.table.setItem(row, 8, status_item)
+
+            # Column 9 — Last used
+            self.table.setItem(row, 9, QTableWidgetItem(self._format_time(node.last_used_at)))
+
+            # Red highlight for dead servers
+            if node.is_alive == False:
+                red_brush = QBrush(QColor(220, 50, 50))
+                for col in range(self.table.columnCount()):
+                    item = self.table.item(row, col)
+                    if item:
+                        item.setForeground(red_brush)
+
         self.table.blockSignals(False)
         self.table.setUpdatesEnabled(True)
 
@@ -248,7 +387,7 @@ class NodesPage(QWidget):
             return sorted(nodes, key=lambda n: n.name.lower(), reverse=not ascending)
         if key == "Группа":
             return sorted(nodes, key=lambda n: n.group.lower(), reverse=not ascending)
-        if key == "Протокол":
+        if key == "Тип":
             return sorted(nodes, key=lambda n: n.scheme.lower(), reverse=not ascending)
         if key == "Пинг":
             none_val = float("inf") if ascending else float("-inf")
@@ -257,14 +396,37 @@ class NodesPage(QWidget):
                 key=lambda n: n.ping_ms if n.ping_ms is not None else none_val,
                 reverse=not ascending,
             )
+        if key == "Скорость":
+            none_val = float("inf") if ascending else float("-inf")
+            return sorted(
+                nodes,
+                key=lambda n: n.speed_mbps if n.speed_mbps is not None else none_val,
+                reverse=not ascending,
+            )
         if key == "Последнее использование":
             return sorted(nodes, key=lambda n: n.last_used_at or "", reverse=not ascending)
         return nodes
 
     def _toggle_sort_order(self) -> None:
         self._sort_ascending = not self._sort_ascending
-        self.sort_order_btn.setText("Возр" if self._sort_ascending else "Убыв")
+        self.sort_order_btn.setIcon(FIF.UP if self._sort_ascending else FIF.DOWN)
         self._reload()
+
+    def _on_header_clicked(self, logical_index: int) -> None:
+        sort_key = _COLUMN_SORT_MAP.get(logical_index)
+        if sort_key is None:
+            return
+        idx = self.sort_combo.findText(sort_key)
+        if idx < 0:
+            return
+        if self.sort_combo.currentIndex() == idx:
+            self._sort_ascending = not self._sort_ascending
+            self.sort_order_btn.setIcon(FIF.UP if self._sort_ascending else FIF.DOWN)
+            self._reload()
+        else:
+            self._sort_ascending = True
+            self.sort_order_btn.setIcon(FIF.UP)
+            self.sort_combo.setCurrentIndex(idx)
 
     # ── Selection helpers ──
 
@@ -284,6 +446,7 @@ class NodesPage(QWidget):
 
     def _emit_selection(self) -> None:
         ids = self._selected_ids()
+        self.bulk_edit_btn.setVisible(len(ids) > 1)
         if len(ids) == 1:
             self.selected_node_changed.emit(next(iter(ids)))
 
@@ -307,9 +470,26 @@ class NodesPage(QWidget):
     def _on_ping_all(self) -> None:
         self.ping_requested.emit(set())
 
-    def _on_delete_selected(self) -> None:
+    def _on_speed_test_selected(self) -> None:
         ids = self._selected_ids()
         if ids:
+            self.speed_test_requested.emit(ids)
+
+    def _on_speed_test_all(self) -> None:
+        self.speed_test_requested.emit(set())
+
+    def _on_delete_selected(self) -> None:
+        ids = self._selected_ids()
+        if not ids:
+            return
+        from qfluentwidgets import MessageBox
+        count = len(ids)
+        title = "Удаление серверов" if count > 1 else "Удаление сервера"
+        msg = f"Удалить {count} серверов?" if count > 1 else "Удалить выбранный сервер?"
+        box = MessageBox(title, msg, self.window())
+        box.yesButton.setText("Удалить")
+        box.cancelButton.setText("Отмена")
+        if box.exec():
             self.delete_requested.emit(ids)
 
     def _on_export_outbound(self) -> None:
@@ -329,7 +509,10 @@ class NodesPage(QWidget):
     def _on_double_click(self, index) -> None:
         row = index.row()
         if 0 <= row < len(self._visible_node_ids):
-            self.edit_node_requested.emit(self._visible_node_ids[row])
+            node_id = self._visible_node_ids[row]
+            node = next((n for n in self._nodes if n.id == node_id), None)
+            if node:
+                self._show_detail(node)
 
     def _on_context_menu(self, pos) -> None:
         item = self.table.itemAt(pos)
@@ -375,6 +558,10 @@ class NodesPage(QWidget):
         ping_action.triggered.connect(lambda: self.ping_requested.emit(ids))
         menu.addAction(ping_action)
 
+        speed_action = Action(f"Тест скорости ({count})" if count > 1 else "Тест скорости", self)
+        speed_action.triggered.connect(lambda: self.speed_test_requested.emit(ids))
+        menu.addAction(speed_action)
+
         menu.addSeparator()
 
         delete_label = f"Удалить {count} серверов" if count > 1 else "Удалить"
@@ -383,6 +570,15 @@ class NodesPage(QWidget):
         menu.addAction(delete_action)
 
         menu.exec(QCursor.pos())
+
+    # ── Navigation (list / detail) ──
+
+    def _show_detail(self, node: Node) -> None:
+        self._detail_widget.set_node(node)
+        self._stack.setCurrentIndex(1)
+
+    def _show_list(self) -> None:
+        self._stack.setCurrentIndex(0)
 
     # ── Utilities ──
 
@@ -420,6 +616,24 @@ class NodesPage(QWidget):
                     self._copy_multiple_links(ids)
             return
         super().keyPressEvent(event)
+
+    @staticmethod
+    def _make_status_item(node: Node) -> QTableWidgetItem:
+        if node.is_alive is None:
+            item = QTableWidgetItem("--")
+        elif node.ping_ms is not None and node.speed_mbps is None and node.is_alive:
+            item = QTableWidgetItem("!")
+            item.setToolTip("Пинг есть, скорость нет — вероятно заблокирован провайдером")
+            item.setForeground(QBrush(QColor(255, 152, 0)))
+        elif node.is_alive:
+            item = QTableWidgetItem("OK")
+            item.setToolTip("Сервер работает")
+            item.setForeground(QBrush(QColor(76, 175, 80)))
+        else:
+            item = QTableWidgetItem("X")
+            item.setToolTip("Сервер недоступен")
+            item.setForeground(QBrush(QColor(220, 50, 50)))
+        return item
 
     @staticmethod
     def _format_time(value: str | None) -> str:

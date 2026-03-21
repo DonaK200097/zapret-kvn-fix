@@ -22,6 +22,7 @@ def tcp_ping(host: str, port: int, timeout: float = 2.0) -> int | None:
 
 class PingWorker(QThread):
     result = pyqtSignal(str, object)
+    progress = pyqtSignal(int, int)  # current, total
     completed = pyqtSignal()
 
     def __init__(self, nodes: list[Node], timeout: float = 2.0):
@@ -34,9 +35,11 @@ class PingWorker(QThread):
         self._cancelled = True
 
     def run(self) -> None:
-        for node in self._nodes:
+        total = len(self._nodes)
+        for i, node in enumerate(self._nodes):
             if self._cancelled:
                 break
+            self.progress.emit(i + 1, total)
             ms = tcp_ping(node.server, node.port, timeout=self._timeout)
             self.result.emit(node.id, ms)
         self.completed.emit()

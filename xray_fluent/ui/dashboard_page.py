@@ -3,14 +3,15 @@ from __future__ import annotations
 from collections import deque
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
+from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QStackedWidget, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
+    BreadcrumbBar,
     CaptionLabel,
     CardWidget,
     ComboBox,
+    FluentIcon as FIF,
     PrimaryPushButton,
-    PushButton,
     SmoothScrollArea,
     StrongBodyLabel,
     SubtitleLabel,
@@ -18,7 +19,7 @@ from qfluentwidgets import (
 )
 
 from ..models import AppSettings, Node, RoutingSettings
-from .traffic_graph import TrafficGraphDialog, TrafficGraphWidget
+from .traffic_graph import DetailTrafficGraphWidget, TrafficGraphWidget
 
 
 def _format_speed(value_bps: float) -> str:
@@ -50,17 +51,10 @@ def _mode_title(mode: str) -> str:
 
 class DashboardPage(QWidget):
     toggle_connection_requested = pyqtSignal()
-    test_requested = pyqtSignal()
     node_selected = pyqtSignal(str)
-    next_requested = pyqtSignal()
-    prev_requested = pyqtSignal()
     mode_changed = pyqtSignal(str)
     tun_toggled = pyqtSignal(bool)
     proxy_toggled = pyqtSignal(bool)
-    nodes_requested = pyqtSignal()
-    routing_requested = pyqtSignal()
-    logs_requested = pyqtSignal()
-    settings_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -80,21 +74,32 @@ class DashboardPage(QWidget):
         self._peak_bps = 0.0
         self._down_history: deque[float] = deque(maxlen=300)
         self._up_history: deque[float] = deque(maxlen=300)
-        self._detail_dialog: TrafficGraphDialog | None = None
 
         self._refresh_timer = QTimer(self)
         self._refresh_timer.setSingleShot(True)
         self._refresh_timer.setInterval(30)
         self._refresh_timer.timeout.connect(self._do_refresh_dashboard)
 
+        # ── Outer layout with QStackedWidget ──────────────────
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
 
-        self._scroll = SmoothScrollArea(self)
+        self._stack = QStackedWidget(self)
+        outer.addWidget(self._stack)
+
+        # ── Page 0: main dashboard ────────────────────────────
+        main_page = QWidget()
+        main_page.setStyleSheet("QWidget { background: transparent; }")
+        self._stack.addWidget(main_page)
+
+        main_outer = QVBoxLayout(main_page)
+        main_outer.setContentsMargins(0, 0, 0, 0)
+
+        self._scroll = SmoothScrollArea(main_page)
         self._scroll.setWidgetResizable(True)
         self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self._scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        outer.addWidget(self._scroll)
+        main_outer.addWidget(self._scroll)
 
         container = QWidget()
         container.setStyleSheet("QWidget { background: transparent; }")
@@ -115,6 +120,7 @@ class DashboardPage(QWidget):
         grid.setColumnStretch(0, 1)
         grid.setColumnStretch(1, 1)
 
+        # ── Connection card ───────────────────────────────────
         self.connection_card = CardWidget(self)
         connection_layout = QVBoxLayout(self.connection_card)
         connection_layout.setContentsMargins(18, 16, 18, 16)
@@ -146,10 +152,15 @@ class DashboardPage(QWidget):
         switches_row.addStretch(1)
         connection_layout.addLayout(switches_row)
 
+        # Toggle button inside connection card
+        self.toggle_btn = PrimaryPushButton(FIF.PLAY_SOLID, "Запустить прокси", self.connection_card)
+        connection_layout.addWidget(self.toggle_btn)
+
         connection_layout.addStretch(1)
         connection_layout.addWidget(self.connection_status_label)
         connection_layout.addWidget(self.connection_target_label)
 
+        # ── Profile card ──────────────────────────────────────
         self.profile_card = CardWidget(self)
         profile_layout = QVBoxLayout(self.profile_card)
         profile_layout.setContentsMargins(18, 16, 18, 16)
@@ -168,6 +179,7 @@ class DashboardPage(QWidget):
         profile_layout.addWidget(self.profile_group_label)
         profile_layout.addWidget(self.profile_latency_label)
 
+        # ── Traffic card ──────────────────────────────────────
         self.traffic_card = CardWidget(self)
         traffic_layout = QVBoxLayout(self.traffic_card)
         traffic_layout.setContentsMargins(18, 16, 18, 16)
@@ -177,7 +189,7 @@ class DashboardPage(QWidget):
         self.traffic_up_label = BodyLabel("Выгрузка: 0 B/s", self.traffic_card)
         self.traffic_rtt_label = BodyLabel("RTT: --", self.traffic_card)
         self.traffic_graph = TrafficGraphWidget(self.traffic_card)
-        self.traffic_graph.clicked.connect(self._show_traffic_detail)
+        self.traffic_graph.clicked.connect(self._show_traffic_page)
         self.traffic_peak_label = CaptionLabel("Пик: 0 B/s", self.traffic_card)
         traffic_layout.addWidget(self.traffic_down_label)
         traffic_layout.addWidget(self.traffic_up_label)
@@ -185,6 +197,7 @@ class DashboardPage(QWidget):
         traffic_layout.addWidget(self.traffic_graph, 1)
         traffic_layout.addWidget(self.traffic_peak_label)
 
+        # ── Routing card ──────────────────────────────────────
         self.routing_card = CardWidget(self)
         routing_layout = QVBoxLayout(self.routing_card)
         routing_layout.setContentsMargins(18, 16, 18, 16)
@@ -211,37 +224,50 @@ class DashboardPage(QWidget):
         grid.addWidget(self.traffic_card, 1, 0)
         grid.addWidget(self.routing_card, 1, 1)
         root.addLayout(grid)
-
-        actions_row = QHBoxLayout()
-        actions_row.setSpacing(8)
-        self.toggle_btn = PrimaryPushButton("Запустить прокси", self)
-        self.test_btn = PushButton("Тест соединения", self)
-        self.nodes_btn = PushButton("Узлы", self)
-        self.routing_btn = PushButton("Маршрутизация", self)
-        self.logs_btn = PushButton("Логи", self)
-        self.settings_btn = PushButton("Настройки", self)
-        actions_row.addWidget(self.toggle_btn)
-        actions_row.addWidget(self.test_btn)
-        actions_row.addWidget(self.nodes_btn)
-        actions_row.addWidget(self.routing_btn)
-        actions_row.addWidget(self.logs_btn)
-        actions_row.addWidget(self.settings_btn)
-        actions_row.addStretch(1)
-        root.addLayout(actions_row)
         root.addStretch(1)
 
+        # ── Page 1: traffic detail subpage ────────────────────
+        self._traffic_detail_page = QWidget()
+        self._traffic_detail_page.setStyleSheet("QWidget { background: transparent; }")
+        self._stack.addWidget(self._traffic_detail_page)
+
+        detail_layout = QVBoxLayout(self._traffic_detail_page)
+        detail_layout.setContentsMargins(24, 20, 24, 20)
+        detail_layout.setSpacing(12)
+
+        self._traffic_breadcrumb = BreadcrumbBar(self._traffic_detail_page)
+        self._traffic_breadcrumb.addItem("dashboard", "Панель управления")
+        self._traffic_breadcrumb.addItem("traffic", "Трафик")
+        self._traffic_breadcrumb.currentItemChanged.connect(self._on_traffic_breadcrumb)
+        detail_layout.addWidget(self._traffic_breadcrumb)
+
+        self._detail_graph = DetailTrafficGraphWidget(self._traffic_detail_page)
+        detail_layout.addWidget(self._detail_graph, 1)
+
+        detail_stats_row = QHBoxLayout()
+        detail_stats_row.setSpacing(16)
+        self._detail_down_label = BodyLabel("Загрузка: 0 B/s", self._traffic_detail_page)
+        self._detail_up_label = BodyLabel("Выгрузка: 0 B/s", self._traffic_detail_page)
+        self._detail_rtt_label = BodyLabel("RTT: --", self._traffic_detail_page)
+        self._detail_peak_label = BodyLabel("Пик: 0 B/s", self._traffic_detail_page)
+        detail_stats_row.addWidget(self._detail_down_label)
+        detail_stats_row.addWidget(self._detail_up_label)
+        detail_stats_row.addWidget(self._detail_rtt_label)
+        detail_stats_row.addWidget(self._detail_peak_label)
+        detail_stats_row.addStretch(1)
+        detail_layout.addLayout(detail_stats_row)
+
+        # ── Signal connections ────────────────────────────────
         self.node_combo.currentIndexChanged.connect(self._on_node_changed)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
         self.tun_switch.checkedChanged.connect(self._on_tun_toggled)
         self.proxy_switch.checkedChanged.connect(self._on_proxy_toggled)
         self.toggle_btn.clicked.connect(self.toggle_connection_requested)
-        self.test_btn.clicked.connect(self.test_requested)
-        self.nodes_btn.clicked.connect(self.nodes_requested)
-        self.routing_btn.clicked.connect(self.routing_requested)
-        self.logs_btn.clicked.connect(self.logs_requested)
-        self.settings_btn.clicked.connect(self.settings_requested)
 
+        self._stack.setCurrentIndex(0)
         self._refresh_dashboard()
+
+    # ── Public API ────────────────────────────────────────────
 
     def set_nodes(self, nodes: list[Node], selected_node_id: str | None) -> None:
         self._nodes = list(nodes)
@@ -333,9 +359,11 @@ class DashboardPage(QWidget):
         self._down_history.append(self._last_down_bps)
         self._up_history.append(self._last_up_bps)
         self.traffic_graph.add_point(self._last_down_bps, self._last_up_bps)
-        if self._detail_dialog is not None and self._detail_dialog.isVisible():
-            self._detail_dialog.add_point(self._last_down_bps, self._last_up_bps)
+        if self._stack.currentIndex() == 1:
+            self._detail_graph.add_point(self._last_down_bps, self._last_up_bps)
         self._refresh_dashboard()
+
+    # ── Refresh logic ─────────────────────────────────────────
 
     def _refresh_dashboard(self) -> None:
         if not self._refresh_timer.isActive():
@@ -348,7 +376,8 @@ class DashboardPage(QWidget):
         self._refresh_routing_card()
         has_profiles = bool(self._nodes)
         self.toggle_btn.setEnabled(has_profiles)
-        self.test_btn.setEnabled(self._selected_node is not None)
+        if self._stack.currentIndex() == 1:
+            self._refresh_detail_stats()
 
     def _refresh_connection_card(self) -> None:
         action = "VPN" if self._settings.tun_mode else "Прокси"
@@ -357,6 +386,7 @@ class DashboardPage(QWidget):
         self.connection_status_label.setText(f"{action} {'работает' if self._connected else 'остановлен'}")
         self.connection_target_label.setText(self._selected_node_summary())
         self.toggle_btn.setText(self._toggle_action_text())
+        self.toggle_btn.setIcon(FIF.PAUSE_BOLD if self._connected else FIF.PLAY_SOLID)
         self.summary_label.setText(self._summary_text())
 
     def _refresh_profile_card(self) -> None:
@@ -388,6 +418,39 @@ class DashboardPage(QWidget):
         )
         bypass = "включён" if self._routing.bypass_lan else "выключен"
         self.routing_bypass_label.setText(f"Обход LAN: {bypass}")
+
+    def _refresh_detail_stats(self) -> None:
+        self._detail_down_label.setText(f"Загрузка: {_format_speed(self._last_down_bps)}")
+        self._detail_up_label.setText(f"Выгрузка: {_format_speed(self._last_up_bps)}")
+        self._detail_rtt_label.setText(f"RTT: {_format_latency(self._effective_latency())}")
+        self._detail_peak_label.setText(f"Пик: {_format_speed(self._peak_bps)}")
+
+    # ── Traffic subpage navigation ────────────────────────────
+
+    def _show_traffic_page(self) -> None:
+        """Switch to the traffic detail subpage."""
+        self._detail_graph.set_data(self._down_history, self._up_history)
+        self._refresh_detail_stats()
+        self._reset_traffic_breadcrumb()
+        self._stack.setCurrentIndex(1)
+
+    def _show_main_page(self) -> None:
+        """Switch back to the main dashboard."""
+        self._stack.setCurrentIndex(0)
+
+    def _on_traffic_breadcrumb(self, routeKey: str) -> None:
+        if routeKey == "dashboard":
+            self._show_main_page()
+
+    def _reset_traffic_breadcrumb(self) -> None:
+        """Reset breadcrumb to initial two-item state."""
+        self._traffic_breadcrumb.blockSignals(True)
+        self._traffic_breadcrumb.clear()
+        self._traffic_breadcrumb.addItem("dashboard", "Панель управления")
+        self._traffic_breadcrumb.addItem("traffic", "Трафик")
+        self._traffic_breadcrumb.blockSignals(False)
+
+    # ── Helpers ───────────────────────────────────────────────
 
     def _effective_latency(self) -> int | None:
         return self._live_rtt_ms if self._live_rtt_ms is not None else self._selected_latency_ms
@@ -425,10 +488,7 @@ class DashboardPage(QWidget):
         scheme = node.scheme.upper() if node.scheme else "NODE"
         return f"{name} ({scheme})"
 
-    def _show_traffic_detail(self) -> None:
-        self._detail_dialog = TrafficGraphDialog(self._down_history, self._up_history, self)
-        self._detail_dialog.exec()
-        self._detail_dialog = None
+    # ── Signal handlers ───────────────────────────────────────
 
     def _on_node_changed(self, index: int) -> None:
         if 0 <= index < len(self._node_ids):

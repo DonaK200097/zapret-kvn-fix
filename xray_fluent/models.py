@@ -32,6 +32,10 @@ class Node:
     last_used_at: str | None = None
     created_at: str = field(default_factory=utc_now_iso)
     country_code: str = ""
+    speed_mbps: float | None = None
+    is_alive: bool | None = None
+    ping_history: list[tuple[str, int | None]] = field(default_factory=list)
+    speed_history: list[tuple[str, float | None]] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -48,6 +52,10 @@ class Node:
             "last_used_at": self.last_used_at,
             "created_at": self.created_at,
             "country_code": self.country_code,
+            "speed_mbps": self.speed_mbps,
+            "is_alive": self.is_alive,
+            "ping_history": self.ping_history,
+            "speed_history": self.speed_history,
         }
 
     @staticmethod
@@ -66,6 +74,10 @@ class Node:
             last_used_at=data.get("last_used_at"),
             created_at=str(data.get("created_at") or utc_now_iso()),
             country_code=str(data.get("country_code") or ""),
+            speed_mbps=data.get("speed_mbps"),
+            is_alive=data.get("is_alive"),
+            ping_history=data.get("ping_history", []),
+            speed_history=data.get("speed_history", []),
         )
 
 

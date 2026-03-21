@@ -18,6 +18,7 @@ from .live_metrics_worker import LiveMetricsWorker
 from .models import AppSettings, AppState, Node
 from .network_monitor import NetworkMonitor
 from .ping_worker import PingWorker
+from .speed_test_worker import SpeedTestWorker
 from .proxy_manager import ProxyManager
 from .security import create_password_hash, get_idle_seconds, verify_password
 from .tun2socks_manager import Tun2SocksManager
@@ -38,6 +39,7 @@ class AppController(QObject):
     log_line = pyqtSignal(str)
     status = pyqtSignal(str, str)
     ping_updated = pyqtSignal(str, object)
+    speed_updated = pyqtSignal(str, object, bool)  # node_id, speed_mbps, is_alive
     connectivity_test_done = pyqtSignal(bool, str, object)
     live_metrics_updated = pyqtSignal(object)
     xray_update_result = pyqtSignal(object)
@@ -75,6 +77,7 @@ class AppController(QObject):
 
         self._country_resolver: CountryResolver | None = None
         self._ping_worker: PingWorker | None = None
+        self._speed_worker: SpeedTestWorker | None = None
         self._connectivity_worker: ConnectivityTestWorker | None = None
         self._metrics_worker: LiveMetricsWorker | None = None
         self._xray_update_worker: XrayCoreUpdateWorker | None = None
@@ -186,6 +189,9 @@ class AppController(QObject):
         if self._connectivity_worker and self._connectivity_worker.isRunning():
             self._connectivity_worker.wait(1000)
         self._stop_metrics_worker()
+        if self._speed_worker and self._speed_worker.isRunning():
+            self._speed_worker.cancel()
+            self._speed_worker.wait(20000)
         if self._xray_update_worker and self._xray_update_worker.isRunning():
             self._xray_update_worker.wait(1000)
 
@@ -559,8 +565,58 @@ class AppController(QObject):
 
         self._ping_worker = PingWorker(nodes)
         self._ping_worker.result.connect(self._on_ping_result)
+        self._ping_worker.progress.connect(lambda cur, tot: self.status.emit("info", f"Пинг {cur}/{tot}..."))
         self._ping_worker.completed.connect(self._on_ping_complete)
         self._ping_worker.start()
+
+    def speed_test_nodes(self, node_ids: set[str] | None = None) -> None:
+        """Запуск теста скорости для указанных нод (или всех, если None)."""
+        nodes = self.state.nodes
+        if node_ids:
+            nodes = [node for node in nodes if node.id in node_ids]
+        if not nodes:
+            return
+
+        if self._speed_worker and self._speed_worker.isRunning():
+            self._speed_worker.cancel()
+            self._speed_worker.wait(3000)
+
+        from .path_utils import resolve_configured_path
+        from .constants import XRAY_PATH_DEFAULT
+        resolved = resolve_configured_path(
+            self.state.settings.xray_path,
+            default_path=XRAY_PATH_DEFAULT,
+            use_default_if_empty=True,
+            migrate_default_location=True,
+        )
+        xray_path = str(resolved) if resolved else self.state.settings.xray_path
+
+        self._speed_worker = SpeedTestWorker(
+            nodes,
+            xray_path=xray_path,
+            routing=self.state.routing,
+        )
+        self._speed_worker.result.connect(self._on_speed_result)
+        self._speed_worker.progress.connect(lambda cur, tot: self.status.emit("info", f"Тест скорости {cur}/{tot}..."))
+        self._speed_worker.completed.connect(self._on_speed_complete)
+        self._speed_worker.start()
+
+    def get_fastest_alive_node(self) -> Node | None:
+        """Вернуть ноду с наибольшей скоростью среди живых, или лучшую по пингу."""
+        alive_nodes = [n for n in self.state.nodes if n.is_alive is True]
+        if not alive_nodes:
+            # Запасной вариант — любая нода с пингом
+            alive_nodes = [n for n in self.state.nodes if n.ping_ms is not None]
+        if not alive_nodes:
+            return self.selected_node  # запасной — текущая выбранная
+
+        # Предпочитаем ноды с данными о скорости
+        with_speed = [n for n in alive_nodes if n.speed_mbps is not None and n.speed_mbps > 0]
+        if with_speed:
+            return max(with_speed, key=lambda n: n.speed_mbps)
+
+        # Запасной вариант — наименьший пинг
+        return min(alive_nodes, key=lambda n: n.ping_ms if n.ping_ms is not None else float('inf'))
 
     def test_connectivity(self, url: str | None = None) -> None:
         target = (url or "https://www.gstatic.com/generate_204").strip()
@@ -720,10 +776,36 @@ class AppController(QObject):
         for node in self.state.nodes:
             if node.id == node_id:
                 node.ping_ms = ping_ms
+                # Не перезаписываем is_alive=True от speed test результатом ping=None
+                if ping_ms is not None or node.is_alive is None:
+                    node.is_alive = ping_ms is not None
+                ts = datetime.now(timezone.utc).isoformat()
+                node.ping_history.append((ts, ping_ms))
+                if len(node.ping_history) > 50:
+                    node.ping_history = node.ping_history[-50:]
                 break
         self.ping_updated.emit(node_id, ping_ms)
 
     def _on_ping_complete(self) -> None:
+        self.nodes_changed.emit(self.state.nodes)
+        self.save()
+
+    def _on_speed_result(self, node_id: str, speed_mbps: float | None, is_alive: bool) -> None:
+        for node in self.state.nodes:
+            if node.id == node_id:
+                node.speed_mbps = speed_mbps
+                # Не перезаписываем is_alive=True от пинга результатом speed=False
+                if is_alive or node.is_alive is None:
+                    node.is_alive = is_alive
+                ts = datetime.now(timezone.utc).isoformat()
+                node.speed_history.append((ts, speed_mbps))
+                if len(node.speed_history) > 50:
+                    node.speed_history = node.speed_history[-50:]
+                break
+        self.speed_updated.emit(node_id, speed_mbps, is_alive)
+
+    def _on_speed_complete(self) -> None:
+        self.status.emit("success", "Тест скорости завершён")
         self.nodes_changed.emit(self.state.nodes)
         self.save()
 

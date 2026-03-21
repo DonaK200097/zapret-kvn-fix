@@ -149,18 +149,11 @@ class MainWindow(FluentWindow):
         self.tray_mode_direct.triggered.connect(lambda: self._set_mode_from_tray("direct"))
 
     def _connect_signals(self) -> None:
-        self.dashboard_page.test_requested.connect(self.controller.test_connectivity)
-        self.dashboard_page.node_selected.connect(self.controller.set_selected_node)
-        self.dashboard_page.next_requested.connect(self.controller.switch_next_node)
-        self.dashboard_page.prev_requested.connect(self.controller.switch_prev_node)
         self.dashboard_page.mode_changed.connect(self._set_mode_only)
         self.dashboard_page.toggle_connection_requested.connect(self.controller.toggle_connection)
         self.dashboard_page.tun_toggled.connect(self._on_dashboard_tun_toggled)
         self.dashboard_page.proxy_toggled.connect(self._on_dashboard_proxy_toggled)
-        self.dashboard_page.nodes_requested.connect(lambda: self.switchTo(self.nodes_page))
-        self.dashboard_page.routing_requested.connect(lambda: self.switchTo(self.routing_page))
-        self.dashboard_page.logs_requested.connect(lambda: self.switchTo(self.logs_page))
-        self.dashboard_page.settings_requested.connect(lambda: self.switchTo(self.settings_page))
+        self.dashboard_page.node_selected.connect(self.controller.set_selected_node)
 
         self.nodes_page.import_clipboard_requested.connect(self._import_nodes_from_clipboard)
         self.nodes_page.delete_requested.connect(self.controller.remove_nodes)
@@ -195,6 +188,10 @@ class MainWindow(FluentWindow):
         self.settings_page.import_backup_requested.connect(self._import_backup)
         self.settings_page.set_encryption_requested.connect(self._set_encryption)
         self.settings_page.disable_encryption_requested.connect(self._disable_encryption)
+
+        # Тест скорости
+        self.nodes_page.speed_test_requested.connect(self._speed_test_requested)
+        self.controller.speed_updated.connect(self._on_speed_updated)
 
         self.controller.nodes_changed.connect(self._on_nodes_changed)
         self.controller.selection_changed.connect(self._on_selection_changed)
@@ -260,6 +257,7 @@ class MainWindow(FluentWindow):
 
     def _on_ping_updated(self, node_id: str, ping_ms: int | None) -> None:
         self.nodes_page.update_ping(node_id, ping_ms)
+        self.nodes_page.refresh_detail()
         node = self.controller.selected_node
         if node and node.id == node_id:
             self.dashboard_page.set_selected_latency(ping_ms)
@@ -317,6 +315,17 @@ class MainWindow(FluentWindow):
             self.controller.ping_nodes(ids)
         else:
             self.controller.ping_nodes(None)
+
+    def _speed_test_requested(self, ids: set[str]) -> None:
+        if ids:
+            self.controller.speed_test_nodes(ids)
+        else:
+            self.controller.speed_test_nodes(None)
+
+    def _on_speed_updated(self, node_id: str, speed_mbps: float | None, is_alive: bool) -> None:
+        self.nodes_page.update_speed(node_id, speed_mbps)
+        self.nodes_page.update_alive_status(node_id, is_alive)
+        self.nodes_page.refresh_detail()
 
     def _on_edit_node(self, node_id: str) -> None:
         node = self.controller._get_node_by_id(node_id)
