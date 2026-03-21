@@ -81,6 +81,7 @@ class AppController(QObject):
         self._xray_update_silent = False
         self._reconnect_after_xray_update = False
         self._reconnecting = False
+        self._switching = False  # suppress intermediate UI updates during stop→start
         self._active_core: str = "xray"  # "xray" or "singbox"
 
         self.xray.log_received.connect(self._on_xray_log)
@@ -703,12 +704,15 @@ class AppController(QObject):
 
     def _on_core_state_changed(self, running: bool) -> None:
         self.connected = running
-        self.connection_changed.emit(running)
+        # Suppress intermediate connection_changed signals during hot-swap/reconnect
+        if not self._switching:
+            self.connection_changed.emit(running)
         if running:
             self._start_metrics_worker()
         else:
             self._stop_metrics_worker()
-            self.live_metrics_updated.emit({"down_bps": 0.0, "up_bps": 0.0, "latency_ms": None})
+            if not self._switching:
+                self.live_metrics_updated.emit({"down_bps": 0.0, "up_bps": 0.0, "latency_ms": None})
         if not running and self._active_core == "xray" and self.state.settings.enable_system_proxy and not self._reconnecting:
             self.proxy.disable(restore_previous=True)
 
@@ -778,35 +782,41 @@ class AppController(QObject):
         node = self.selected_node
         if not node:
             return
-        self._log(f"[hot-swap] {reason} — restarting xray only, TUN stays up")
-        self.status.emit("info", f"Переключение на {node.name}...")
-        self.xray.stop()
-        xray_cfg = build_xray_config(node, self.state.routing, self.state.settings)
-        xray_cfg["log"] = {"loglevel": "error"}
-        xray_cfg["inbounds"] = [
-            ib for ib in xray_cfg.get("inbounds", [])
-            if ib.get("protocol") not in ("",)  # keep all inbounds
-        ]
-        routing = xray_cfg.setdefault("routing", {})
-        rules = routing.setdefault("rules", [])
-        rules.insert(0, {
-            "type": "field",
-            "ip": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "224.0.0.0/4", "255.255.255.255/32"],
-            "outboundTag": "block",
-        })
-        ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
-        if ok:
-            node.last_used_at = datetime.now(timezone.utc).isoformat()
-            self.status.emit("success", f"Переключено: {node.name} (TUN)")
-            self.save()
-        else:
-            self._log("[hot-swap] xray restart failed")
-            self.status.emit("error", "Не удалось переключить сервер")
+        self._switching = True
+        try:
+            self._log(f"[hot-swap] {reason} — restarting xray only, TUN stays up")
+            self.status.emit("info", f"Переключение на {node.name}...")
+            self.xray.stop()
+            xray_cfg = build_xray_config(node, self.state.routing, self.state.settings)
+            xray_cfg["log"] = {"loglevel": "error"}
+            xray_cfg["inbounds"] = [
+                ib for ib in xray_cfg.get("inbounds", [])
+                if ib.get("protocol") not in ("",)  # keep all inbounds
+            ]
+            routing = xray_cfg.setdefault("routing", {})
+            rules = routing.setdefault("rules", [])
+            rules.insert(0, {
+                "type": "field",
+                "ip": ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16", "224.0.0.0/4", "255.255.255.255/32"],
+                "outboundTag": "block",
+            })
+            ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
+            if ok:
+                node.last_used_at = datetime.now(timezone.utc).isoformat()
+                self.status.emit("success", f"Переключено: {node.name} (TUN)")
+                self.save()
+            else:
+                self._log("[hot-swap] xray restart failed")
+                self.status.emit("error", "Не удалось переключить сервер")
+        finally:
+            self._switching = False
+            self.connection_changed.emit(self.connected)
 
     def _reconnect(self, reason: str) -> None:
         if self._reconnecting:
             return
         self._reconnecting = True
+        self._switching = True
         try:
             self._log(f"[reconnect] {reason}")
             stopped = self.disconnect_current(disable_proxy=False, emit_status=False)
@@ -821,6 +831,8 @@ class AppController(QObject):
                 self.proxy.disable(restore_previous=True)
         finally:
             self._reconnecting = False
+            self._switching = False
+            self.connection_changed.emit(self.connected)
 
     def export_backup(self, path: Path, passphrase: str = "") -> None:
         self.storage.export_backup(path, passphrase)

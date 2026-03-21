@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import deque
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import QGridLayout, QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
@@ -11,8 +11,10 @@ from qfluentwidgets import (
     ComboBox,
     PrimaryPushButton,
     PushButton,
+    SmoothScrollArea,
     StrongBodyLabel,
     SubtitleLabel,
+    SwitchButton,
 )
 
 from ..models import AppSettings, Node, RoutingSettings
@@ -53,6 +55,8 @@ class DashboardPage(QWidget):
     next_requested = pyqtSignal()
     prev_requested = pyqtSignal()
     mode_changed = pyqtSignal(str)
+    tun_toggled = pyqtSignal(bool)
+    proxy_toggled = pyqtSignal(bool)
     nodes_requested = pyqtSignal()
     routing_requested = pyqtSignal()
     logs_requested = pyqtSignal()
@@ -78,11 +82,29 @@ class DashboardPage(QWidget):
         self._up_history: deque[float] = deque(maxlen=300)
         self._detail_dialog: TrafficGraphDialog | None = None
 
-        root = QVBoxLayout(self)
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setSingleShot(True)
+        self._refresh_timer.setInterval(30)
+        self._refresh_timer.timeout.connect(self._do_refresh_dashboard)
+
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+
+        self._scroll = SmoothScrollArea(self)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
+        outer.addWidget(self._scroll)
+
+        container = QWidget()
+        container.setStyleSheet("QWidget { background: transparent; }")
+        self._scroll.setWidget(container)
+
+        root = QVBoxLayout(container)
         root.setContentsMargins(24, 20, 24, 20)
         root.setSpacing(12)
 
-        root.addWidget(SubtitleLabel("Панель управления", self))
+        root.addWidget(SubtitleLabel("Панель управления", container))
         self.summary_label = CaptionLabel("Краткий обзор подключения, профиля, трафика и маршрутизации.", self)
         self.summary_label.setWordWrap(True)
         root.addWidget(self.summary_label)
@@ -105,6 +127,25 @@ class DashboardPage(QWidget):
         self.connection_target_label.setWordWrap(True)
         connection_layout.addWidget(self.connection_state_label)
         connection_layout.addWidget(self.connection_engine_label)
+
+        switches_row = QHBoxLayout()
+        switches_row.setSpacing(20)
+        tun_label = CaptionLabel("VPN (TUN)", self.connection_card)
+        self.tun_switch = SwitchButton(self.connection_card)
+        self.tun_switch.setOnText("Вкл")
+        self.tun_switch.setOffText("Выкл")
+        switches_row.addWidget(tun_label)
+        switches_row.addWidget(self.tun_switch)
+        switches_row.addSpacing(12)
+        proxy_label = CaptionLabel("Сист. прокси", self.connection_card)
+        self.proxy_switch = SwitchButton(self.connection_card)
+        self.proxy_switch.setOnText("Вкл")
+        self.proxy_switch.setOffText("Выкл")
+        switches_row.addWidget(proxy_label)
+        switches_row.addWidget(self.proxy_switch)
+        switches_row.addStretch(1)
+        connection_layout.addLayout(switches_row)
+
         connection_layout.addStretch(1)
         connection_layout.addWidget(self.connection_status_label)
         connection_layout.addWidget(self.connection_target_label)
@@ -191,6 +232,8 @@ class DashboardPage(QWidget):
 
         self.node_combo.currentIndexChanged.connect(self._on_node_changed)
         self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        self.tun_switch.checkedChanged.connect(self._on_tun_toggled)
+        self.proxy_switch.checkedChanged.connect(self._on_proxy_toggled)
         self.toggle_btn.clicked.connect(self.toggle_connection_requested)
         self.test_btn.clicked.connect(self.test_requested)
         self.nodes_btn.clicked.connect(self.nodes_requested)
@@ -269,6 +312,7 @@ class DashboardPage(QWidget):
 
     def set_settings_snapshot(self, settings: AppSettings) -> None:
         self._settings = settings
+        self._sync_switches()
         self._refresh_dashboard()
 
     def set_routing_snapshot(self, routing: RoutingSettings) -> None:
@@ -294,6 +338,10 @@ class DashboardPage(QWidget):
         self._refresh_dashboard()
 
     def _refresh_dashboard(self) -> None:
+        if not self._refresh_timer.isActive():
+            self._refresh_timer.start()
+
+    def _do_refresh_dashboard(self) -> None:
         self._refresh_connection_card()
         self._refresh_profile_card()
         self._refresh_traffic_card()
@@ -390,3 +438,22 @@ class DashboardPage(QWidget):
         value = self.mode_combo.itemData(index)
         if value:
             self.mode_changed.emit(str(value))
+
+    def _on_tun_toggled(self, checked: bool) -> None:
+        self.proxy_switch.setEnabled(not checked)
+        self.tun_toggled.emit(checked)
+
+    def _on_proxy_toggled(self, checked: bool) -> None:
+        self.proxy_toggled.emit(checked)
+
+    def _sync_switches(self) -> None:
+        self.tun_switch.blockSignals(True)
+        self.tun_switch.setChecked(self._settings.tun_mode)
+        self.tun_switch.setText("Вкл" if self._settings.tun_mode else "Выкл")
+        self.tun_switch.blockSignals(False)
+
+        self.proxy_switch.blockSignals(True)
+        self.proxy_switch.setChecked(self._settings.enable_system_proxy)
+        self.proxy_switch.setText("Вкл" if self._settings.enable_system_proxy else "Выкл")
+        self.proxy_switch.setEnabled(not self._settings.tun_mode)
+        self.proxy_switch.blockSignals(False)

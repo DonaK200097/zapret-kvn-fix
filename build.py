@@ -44,6 +44,20 @@ def _run(cmd: list[str], **kwargs) -> None:
     subprocess.run(cmd, check=True, **kwargs)
 
 
+def _copy_tree_merge(src: Path, dst: Path) -> None:
+    """Copy src tree into dst, overwriting files where possible and skipping locked ones."""
+    dst.mkdir(parents=True, exist_ok=True)
+    for item in src.iterdir():
+        target = dst / item.name
+        if item.is_dir():
+            _copy_tree_merge(item, target)
+        else:
+            try:
+                shutil.copy2(str(item), str(target))
+            except PermissionError:
+                _print(f"  skipped (locked): {target.name}")
+
+
 def write_debug_launcher() -> None:
     launcher_path = APP_DIR / DEBUG_LAUNCHER_NAME
     launcher_path.write_text(
@@ -87,12 +101,14 @@ def clean() -> None:
             _print("Close the app (tray -> Quit) and try again.")
             raise SystemExit(1)
 
-    # dist/XrayFluent/ — remove everything EXCEPT data/ (state, keys, logs)
+    # dist/XrayFluent/ — remove everything EXCEPT data/, core/, zapret/
+    # core/ and zapret/ are kept because running binaries (xray.exe) lock them;
+    # they will be merged/overwritten in build_exe() instead.
+    keep_dirs = {"data", "core", "zapret"}
     if APP_DIR.exists():
-        data_dir = APP_DIR / "data"
         for child in APP_DIR.iterdir():
-            if child == data_dir:
-                _print(f"Keeping {data_dir}")
+            if child.name in keep_dirs:
+                _print(f"Keeping {child}")
                 continue
             try:
                 if child.is_dir():
@@ -100,10 +116,8 @@ def clean() -> None:
                 else:
                     child.unlink()
             except PermissionError:
-                _print(f"ERROR: Cannot remove {child} — is XrayFluent.exe still running?")
-                _print("Close the app (tray -> Quit) and try again.")
-                raise SystemExit(1)
-        _print(f"Cleaned {APP_DIR} (data/ preserved)")
+                _print(f"WARNING: Cannot remove {child}, skipping")
+        _print(f"Cleaned {APP_DIR} (data/, core/, zapret/ preserved)")
 
     spec = ROOT / f"{APP_NAME}.spec"
     if spec.exists():
@@ -113,14 +127,11 @@ def clean() -> None:
 def build_exe() -> None:
     ensure_venv()
 
-    # Preserve data/ across PyInstaller rebuild (it nukes dist/AppName/)
-    data_dir = APP_DIR / "data"
-    data_backup = DIST_DIR / "_data_backup"
-    if data_dir.exists():
-        if data_backup.exists():
-            shutil.rmtree(data_backup)
-        _print(f"Backing up {data_dir} -> {data_backup}")
-        shutil.move(str(data_dir), str(data_backup))
+    # Build into a temporary directory so PyInstaller doesn't touch the live
+    # APP_DIR (which may contain locked files like running xray.exe).
+    temp_dist = DIST_DIR / "_build_tmp"
+    if temp_dist.exists():
+        shutil.rmtree(temp_dist)
 
     cmd = [
         str(VENV_PYTHON), "-m", "PyInstaller",
@@ -132,6 +143,7 @@ def build_exe() -> None:
         "--onedir",
         "--uac-admin",
         "--manifest", str(MANIFEST),
+        "--distpath", str(temp_dist),
         # win32comext is needed by qframelesswindow for Mica/DWM effects
         "--hidden-import", "win32comext",
         "--hidden-import", "win32comext.shell",
@@ -139,27 +151,22 @@ def build_exe() -> None:
     ]
     _run(cmd, cwd=str(ROOT))
 
-    # Restore data/
-    if data_backup.exists():
-        if data_dir.exists():
-            shutil.rmtree(data_dir)
-        _print(f"Restoring {data_backup} -> {data_dir}")
-        shutil.move(str(data_backup), str(data_dir))
+    # Merge PyInstaller output into the real APP_DIR (skip locked files)
+    temp_app = temp_dist / APP_NAME
+    _print(f"Merging build output -> {APP_DIR}")
+    _copy_tree_merge(temp_app, APP_DIR)
+    shutil.rmtree(temp_dist, ignore_errors=True)
 
-    # Copy core/ into dist
+    # Copy core/ into dist (merge, skip locked files like running xray.exe)
     dst_core = APP_DIR / "core"
-    if dst_core.exists():
-        shutil.rmtree(dst_core)
-    _print(f"Copying core -> {dst_core}")
-    shutil.copytree(str(CORE_DIR), str(dst_core))
+    _print(f"Merging core -> {dst_core}")
+    _copy_tree_merge(CORE_DIR, dst_core)
 
-    # Copy zapret/ into dist
+    # Copy zapret/ into dist (merge, skip locked files)
     dst_zapret = APP_DIR / "zapret"
-    if dst_zapret.exists():
-        shutil.rmtree(dst_zapret)
     if ZAPRET_DIR.is_dir():
-        _print(f"Copying zapret -> {dst_zapret}")
-        shutil.copytree(str(ZAPRET_DIR), str(dst_zapret))
+        _print(f"Merging zapret -> {dst_zapret}")
+        _copy_tree_merge(ZAPRET_DIR, dst_zapret)
 
     write_debug_launcher()
 

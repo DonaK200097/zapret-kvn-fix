@@ -67,11 +67,15 @@ class XrayManager(QObject):
         self._process.setArguments(["run", "-c", str(XRAY_CONFIG_FILE)])
         self._process.start()
 
-        if not self._process.waitForStarted(4000):
+        if not self._process.waitForStarted(2000):
             self.error.emit(f"failed to start xray process: {self._process.errorString()}")
             return False
 
-        self._process.waitForReadyRead(250)
+        # Brief yield to let process initialize and detect early crashes
+        from PyQt6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app:
+            app.processEvents()
         if self._process.state() == QProcess.ProcessState.NotRunning:
             self.error.emit("xray process exited right after start")
             return False
@@ -88,11 +92,17 @@ class XrayManager(QObject):
 
         self._stop_requested = expected
         self._process.terminate()
-        if self._process.waitForFinished(600):
-            return True
+        # Non-blocking wait: process Qt events to keep UI responsive
+        from PyQt6.QtWidgets import QApplication
+        for _ in range(6):  # 6 × 100ms = 600ms max
+            if self._process.waitForFinished(100):
+                return True
+            app = QApplication.instance()
+            if app:
+                app.processEvents()
 
         self._process.kill()
-        if self._process.waitForFinished(400):
+        if self._process.waitForFinished(200):
             return True
 
         if self._process.state() == QProcess.ProcessState.NotRunning:

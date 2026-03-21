@@ -155,6 +155,8 @@ class MainWindow(FluentWindow):
         self.dashboard_page.prev_requested.connect(self.controller.switch_prev_node)
         self.dashboard_page.mode_changed.connect(self._set_mode_only)
         self.dashboard_page.toggle_connection_requested.connect(self.controller.toggle_connection)
+        self.dashboard_page.tun_toggled.connect(self._on_dashboard_tun_toggled)
+        self.dashboard_page.proxy_toggled.connect(self._on_dashboard_proxy_toggled)
         self.dashboard_page.nodes_requested.connect(lambda: self.switchTo(self.nodes_page))
         self.dashboard_page.routing_requested.connect(lambda: self.switchTo(self.routing_page))
         self.dashboard_page.logs_requested.connect(lambda: self.switchTo(self.logs_page))
@@ -209,6 +211,7 @@ class MainWindow(FluentWindow):
 
     def _init_window(self) -> None:
         s = self.controller.state.settings
+        self.setMinimumSize(600, 450)
         self.resize(s.window_width, s.window_height)
         if s.window_x >= 0 and s.window_y >= 0:
             if self._is_position_on_screen(s.window_x, s.window_y):
@@ -361,6 +364,20 @@ class MainWindow(FluentWindow):
         if clipboard is not None:
             clipboard.setText(payload)
             self._show_status("info", "Экспорт отменён, JSON скопирован в буфер обмена")
+
+    def _on_dashboard_tun_toggled(self, checked: bool) -> None:
+        from copy import deepcopy
+        settings = deepcopy(self.controller.state.settings)
+        settings.tun_mode = checked
+        if checked:
+            settings.enable_system_proxy = False
+        self.controller.update_settings(settings)
+
+    def _on_dashboard_proxy_toggled(self, checked: bool) -> None:
+        from copy import deepcopy
+        settings = deepcopy(self.controller.state.settings)
+        settings.enable_system_proxy = checked
+        self.controller.update_settings(settings)
 
     def _set_mode_only(self, mode: str) -> None:
         routing = self.controller.state.routing

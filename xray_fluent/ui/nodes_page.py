@@ -220,6 +220,7 @@ class NodesPage(QWidget):
         sort_key = self.sort_combo.currentText()
         filtered = self._sort_nodes(filtered, sort_key, self._sort_ascending)
 
+        self.table.setUpdatesEnabled(False)
         self.table.blockSignals(True)
         self.table.setRowCount(len(filtered))
         self._visible_node_ids = []
@@ -239,6 +240,7 @@ class NodesPage(QWidget):
             self.table.setItem(row, 6, QTableWidgetItem("--" if node.ping_ms is None else f"{node.ping_ms} ms"))
             self.table.setItem(row, 7, QTableWidgetItem(self._format_time(node.last_used_at)))
         self.table.blockSignals(False)
+        self.table.setUpdatesEnabled(True)
 
     @staticmethod
     def _sort_nodes(nodes: list[Node], key: str, ascending: bool) -> list[Node]:

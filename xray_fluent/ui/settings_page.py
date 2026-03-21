@@ -180,16 +180,6 @@ class SettingsPage(QWidget):
             FIF.GLOBE, "Порт HTTP", "Локальный порт HTTP прокси",
             parent=network_group,
         )
-        self.proxy_card = SwitchSettingCard(
-            FIF.GLOBE, "Системный прокси",
-            "Автоматически настраивать системный прокси Windows при подключении",
-            parent=network_group,
-        )
-        self.tun_card = SwitchSettingCard(
-            FIF.WIFI, "Режим TUN (VPN)",
-            "Направить весь трафик через виртуальный адаптер. Требуются права администратора.",
-            parent=network_group,
-        )
         self.reconnect_card = SwitchSettingCard(
             FIF.SYNC, "Переподключение при смене сети",
             "Автоматически переподключаться при смене сетевого адаптера",
@@ -198,8 +188,6 @@ class SettingsPage(QWidget):
 
         network_group.addSettingCard(self.socks_card)
         network_group.addSettingCard(self.http_card)
-        network_group.addSettingCard(self.proxy_card)
-        network_group.addSettingCard(self.tun_card)
         network_group.addSettingCard(self.reconnect_card)
         root.addWidget(network_group)
 
@@ -349,9 +337,7 @@ class SettingsPage(QWidget):
         self.xray_path_card.edit.editingFinished.connect(self._auto_save)
         self.singbox_path_card.edit.editingFinished.connect(self._auto_save)
 
-        self.tun_card.checkedChanged.connect(self._on_tun_toggled)
         self.start_min_card.checkedChanged.connect(self._auto_save)
-        self.proxy_card.checkedChanged.connect(self._auto_save)
         self.launch_card.checkedChanged.connect(self._auto_save)
         self.reconnect_card.checkedChanged.connect(self._auto_save)
         self.check_updates_card.checkedChanged.connect(self._auto_save)
@@ -389,11 +375,7 @@ class SettingsPage(QWidget):
                 migrate_default_location=True,
             )
         )
-        self.tun_card.setChecked(settings.tun_mode)
-        self.proxy_card.setEnabled(not settings.tun_mode)
-
         self.start_min_card.setChecked(settings.start_minimized)
-        self.proxy_card.setChecked(settings.enable_system_proxy)
         self.launch_card.setChecked(settings.launch_on_startup)
         self.reconnect_card.setChecked(settings.reconnect_on_network_change)
         self.check_updates_card.setChecked(settings.check_updates)
@@ -457,10 +439,6 @@ class SettingsPage(QWidget):
             )
             self._auto_save()
 
-    def _on_tun_toggled(self, checked: bool) -> None:
-        self.proxy_card.setEnabled(not checked)
-        self._auto_save()
-
     def _auto_save(self) -> None:
         if self._loading:
             return
@@ -483,9 +461,7 @@ class SettingsPage(QWidget):
         )
         self.xray_path_card.edit.setText(data.xray_path)
         self.singbox_path_card.edit.setText(data.singbox_path)
-        data.tun_mode = self.tun_card.isChecked()
         data.start_minimized = self.start_min_card.isChecked()
-        data.enable_system_proxy = self.proxy_card.isChecked()
         data.launch_on_startup = self.launch_card.isChecked()
         data.reconnect_on_network_change = self.reconnect_card.isChecked()
         data.check_updates = self.check_updates_card.isChecked()
