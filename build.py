@@ -148,6 +148,8 @@ def build_exe() -> None:
         "--hidden-import", "win32comext",
         "--hidden-import", "win32comext.shell",
         "--hidden-import", "win32comext.shell.shellcon",
+        # encodings.idna is needed by socket.getaddrinfo() for hostname resolution
+        "--hidden-import", "encodings.idna",
     ]
     _run(cmd, cwd=str(ROOT))
 
