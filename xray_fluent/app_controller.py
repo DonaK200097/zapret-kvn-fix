@@ -806,7 +806,6 @@ class AppController(QObject):
         self.ping_updated.emit(node_id, ping_ms)
 
     def _on_ping_complete(self) -> None:
-        self.nodes_changed.emit(self.state.nodes)
         self.save()
 
     def _on_speed_result(self, node_id: str, speed_mbps: float | None, is_alive: bool) -> None:
@@ -825,7 +824,6 @@ class AppController(QObject):
 
     def _on_speed_complete(self) -> None:
         self.status.emit("success", "Тест скорости завершён")
-        self.nodes_changed.emit(self.state.nodes)
         self.save()
 
     def _on_connectivity_result(self, ok: bool, message: str, elapsed_ms: int | None) -> None:

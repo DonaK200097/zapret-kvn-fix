@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import cast
 
-from PyQt6.QtCore import Qt, pyqtSignal, QSize
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal, QSize
 from PyQt6.QtGui import QBrush, QColor, QCursor, QKeyEvent, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QHBoxLayout, QHeaderView,
@@ -24,6 +24,10 @@ from qfluentwidgets import RoundMenu, Action
 from ..country_flags import get_flag_icon
 from ..models import Node
 from .node_detail_widget import NodeDetailWidget
+
+_RED_BRUSH = QBrush(QColor(220, 50, 50))
+_GREEN_BRUSH = QBrush(QColor(76, 175, 80))
+_ORANGE_BRUSH = QBrush(QColor(255, 152, 0))
 
 _SORT_KEYS = ["Вручную", "Имя", "Группа", "Тип", "Пинг", "Скорость", "Последнее использование"]
 
@@ -56,7 +60,10 @@ class NodesPage(QWidget):
 
         self._nodes: list[Node] = []
         self._visible_node_ids: list[str] = []
+        self._id_to_row: dict[str, int] = {}
         self._sort_ascending = True
+        self._cached_groups: frozenset[str] = frozenset()
+        self._cached_tags: frozenset[str] = frozenset()
 
         # Stack: page 0 = server list, page 1 = node detail
         self._stack = QStackedWidget(self)
@@ -221,8 +228,14 @@ class NodesPage(QWidget):
         self._detail_widget.speed_test_node_requested.connect(lambda nid: self.speed_test_requested.emit({nid}))
         self._stack.addWidget(self._detail_widget)
 
+        # --- Search debounce ---
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._reload)
+
         # --- Connections ---
-        self.search_edit.textChanged.connect(self._reload)
+        self.search_edit.textChanged.connect(self._search_timer.start)
         self.group_filter.currentIndexChanged.connect(self._reload)
         self.tag_filter.currentIndexChanged.connect(self._reload)
         self.sort_combo.currentIndexChanged.connect(self._reload)
@@ -257,38 +270,34 @@ class NodesPage(QWidget):
             self._select_node(selected_id)
 
     def update_ping(self, node_id: str, ping_ms: int | None) -> None:
-        for row, visible_id in enumerate(self._visible_node_ids):
-            if visible_id != node_id:
-                continue
-            text = "--" if ping_ms is None else f"{ping_ms} ms"
-            item = QTableWidgetItem(text)
-            if ping_ms is not None:
-                item.setToolTip(f"Пинг: {ping_ms} ms")
-            self.table.setItem(row, 6, item)
-            break
+        row = self._id_to_row.get(node_id)
+        if row is None:
+            return
+        text = "--" if ping_ms is None else f"{ping_ms} ms"
+        item = QTableWidgetItem(text)
+        if ping_ms is not None:
+            item.setToolTip(f"Пинг: {ping_ms} ms")
+        self.table.setItem(row, 6, item)
 
     def update_speed(self, node_id: str, speed_mbps: float | None) -> None:
-        for row, visible_id in enumerate(self._visible_node_ids):
-            if visible_id != node_id:
-                continue
-            text = "--" if speed_mbps is None else f"{speed_mbps:.1f} MB/s"
-            self.table.setItem(row, 7, QTableWidgetItem(text))
-            break
+        row = self._id_to_row.get(node_id)
+        if row is None:
+            return
+        text = "--" if speed_mbps is None else f"{speed_mbps:.1f} MB/s"
+        self.table.setItem(row, 7, QTableWidgetItem(text))
 
     def update_alive_status(self, node_id: str, is_alive: bool | None) -> None:
+        row = self._id_to_row.get(node_id)
+        if row is None:
+            return
         node = next((n for n in self._nodes if n.id == node_id), None)
-        for row, visible_id in enumerate(self._visible_node_ids):
-            if visible_id != node_id:
-                continue
-            status_item = self._make_status_item(node) if node else QTableWidgetItem("--")
-            if is_alive == False:
-                red_brush = QBrush(QColor(220, 50, 50))
-                for col in range(self.table.columnCount()):
-                    item = self.table.item(row, col)
-                    if item:
-                        item.setForeground(red_brush)
-            self.table.setItem(row, 8, status_item)
-            break
+        status_item = self._make_status_item(node) if node else QTableWidgetItem("--")
+        if is_alive == False:
+            for col in range(self.table.columnCount()):
+                item = self.table.item(row, col)
+                if item:
+                    item.setForeground(_RED_BRUSH)
+        self.table.setItem(row, 8, status_item)
 
     def refresh_detail(self) -> None:
         """Refresh detail view if it is currently visible."""
@@ -298,14 +307,24 @@ class NodesPage(QWidget):
     # ── Filter combos ──
 
     def _rebuild_filter_combos(self) -> None:
+        new_groups = frozenset(n.group for n in self._nodes if n.group)
+        new_tags: set[str] = set()
+        for n in self._nodes:
+            new_tags.update(n.tags)
+        new_tags_frozen = frozenset(new_tags)
+
+        if new_groups == self._cached_groups and new_tags_frozen == self._cached_tags:
+            return
+        self._cached_groups = new_groups
+        self._cached_tags = new_tags_frozen
+
         prev_group = self.group_filter.currentText()
         prev_tag = self.tag_filter.currentText()
 
         self.group_filter.blockSignals(True)
         self.group_filter.clear()
         self.group_filter.addItem("Все группы")
-        groups = sorted({n.group for n in self._nodes if n.group})
-        for g in groups:
+        for g in sorted(new_groups):
             self.group_filter.addItem(g)
         idx = self.group_filter.findText(prev_group)
         self.group_filter.setCurrentIndex(idx if idx >= 0 else 0)
@@ -314,10 +333,7 @@ class NodesPage(QWidget):
         self.tag_filter.blockSignals(True)
         self.tag_filter.clear()
         self.tag_filter.addItem("Все теги")
-        tags: set[str] = set()
-        for n in self._nodes:
-            tags.update(n.tags)
-        for t in sorted(tags):
+        for t in sorted(new_tags_frozen):
             self.tag_filter.addItem(t)
         idx = self.tag_filter.findText(prev_tag)
         self.tag_filter.setCurrentIndex(idx if idx >= 0 else 0)
@@ -352,9 +368,11 @@ class NodesPage(QWidget):
         self.table.blockSignals(True)
         self.table.setRowCount(len(filtered))
         self._visible_node_ids = []
+        self._id_to_row = {}
 
         for row, node in enumerate(filtered):
             self._visible_node_ids.append(node.id)
+            self._id_to_row[node.id] = row
             name_item = QTableWidgetItem(node.name or "Без имени")
             icon = get_flag_icon(node.country_code)
             if icon:
@@ -372,7 +390,7 @@ class NodesPage(QWidget):
             if node.ping_ms is not None:
                 ping_item.setToolTip(f"Пинг: {node.ping_ms} ms")
             if node.is_alive == False:
-                ping_item.setForeground(QBrush(QColor(220, 50, 50)))
+                ping_item.setForeground(_RED_BRUSH)
             self.table.setItem(row, 6, ping_item)
 
             # Column 7 — Speed
@@ -388,11 +406,10 @@ class NodesPage(QWidget):
 
             # Red highlight for dead servers
             if node.is_alive == False:
-                red_brush = QBrush(QColor(220, 50, 50))
                 for col in range(self.table.columnCount()):
                     item = self.table.item(row, col)
                     if item:
-                        item.setForeground(red_brush)
+                        item.setForeground(_RED_BRUSH)
 
         self.table.blockSignals(False)
         self.table.setUpdatesEnabled(True)
@@ -455,18 +472,20 @@ class NodesPage(QWidget):
     # ── Selection helpers ──
 
     def _selected_ids(self) -> set[str]:
-        rows = {item.row() for item in self.table.selectedItems()}
+        model = self.table.selectionModel()
+        if model is None:
+            return set()
         ids: set[str] = set()
-        for row in rows:
+        for index in model.selectedRows():
+            row = index.row()
             if 0 <= row < len(self._visible_node_ids):
                 ids.add(self._visible_node_ids[row])
         return ids
 
     def _select_node(self, node_id: str) -> None:
-        for row, value in enumerate(self._visible_node_ids):
-            if value == node_id:
-                self.table.selectRow(row)
-                break
+        row = self._id_to_row.get(node_id)
+        if row is not None:
+            self.table.selectRow(row)
 
     def _emit_selection(self) -> None:
         ids = self._selected_ids()
@@ -671,15 +690,15 @@ class NodesPage(QWidget):
         elif node.ping_ms is not None and node.speed_mbps is None and node.is_alive:
             item = QTableWidgetItem("!")
             item.setToolTip("Пинг есть, скорость нет — вероятно заблокирован провайдером")
-            item.setForeground(QBrush(QColor(255, 152, 0)))
+            item.setForeground(_ORANGE_BRUSH)
         elif node.is_alive:
             item = QTableWidgetItem("OK")
             item.setToolTip("Сервер работает")
-            item.setForeground(QBrush(QColor(76, 175, 80)))
+            item.setForeground(_GREEN_BRUSH)
         else:
             item = QTableWidgetItem("X")
             item.setToolTip("Сервер недоступен")
-            item.setForeground(QBrush(QColor(220, 50, 50)))
+            item.setForeground(_RED_BRUSH)
         return item
 
     @staticmethod

@@ -61,3 +61,5 @@ class LogsPage(QWidget):
         else:
             data = [line for line in self._lines if query in line.lower()]
         self.log_edit.setPlainText("\n".join(data[-2000:]))
+        vbar = self.log_edit.verticalScrollBar()
+        vbar.setValue(vbar.maximum())

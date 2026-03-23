@@ -114,8 +114,8 @@ def build_xray_config(node: Node, routing: RoutingSettings, settings: AppSetting
             service_direct.extend(preset.domains)
         else:
             service_proxy.extend(preset.domains)
-    _append_domain_ip_rule(routing_rules, service_direct, "direct")
     _append_domain_ip_rule(routing_rules, service_proxy, "proxy")
+    _append_domain_ip_rule(routing_rules, service_direct, "direct")
 
     if not settings.tun_mode:
         for pr in routing.process_rules:

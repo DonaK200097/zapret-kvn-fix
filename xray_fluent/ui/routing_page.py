@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -19,7 +19,6 @@ from qfluentwidgets import (
     CaptionLabel,
     ComboBox,
     FluentIcon as FIF,
-    PrimaryPushButton,
     PrimaryToolButton,
     SettingCard,
     SettingCardGroup,
@@ -95,6 +94,12 @@ class RoutingPage(QWidget):
         self.setObjectName("routing")
         self._loading = False
 
+        # Debounce timer for auto-apply
+        self._apply_timer = QTimer(self)
+        self._apply_timer.setSingleShot(True)
+        self._apply_timer.setInterval(300)
+        self._apply_timer.timeout.connect(self._emit_apply)
+
         # --- Outer layout with scroll area ---
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
@@ -149,6 +154,7 @@ class RoutingPage(QWidget):
                 preset.description,
                 parent=self._services_group,
             )
+            card.changed.connect(self._schedule_apply)
             self._services_group.addSettingCard(card)
             self._service_cards[preset.id] = card
 
@@ -235,22 +241,25 @@ class RoutingPage(QWidget):
         self.tun_warning.setVisible(False)
         root.addWidget(self.tun_warning)
 
-        # --- Apply button ---
-        btn_row = QHBoxLayout()
-        btn_row.addStretch(1)
-        self.apply_btn = PrimaryPushButton("Применить маршрутизацию", container)
-        btn_row.addWidget(self.apply_btn)
-        root.addLayout(btn_row)
         root.addStretch(1)
 
         # --- Signals ---
-        self.apply_btn.clicked.connect(self._emit_apply)
-        self.add_rule_btn.clicked.connect(lambda: self._add_rule_row())
-        self.del_rule_btn.clicked.connect(self._del_selected_rules)
-        self.import_btn.clicked.connect(self._import_rules)
+        self.mode_combo.currentIndexChanged.connect(self._schedule_apply)
+        self.dns_combo.currentIndexChanged.connect(self._schedule_apply)
+        self.bypass_switch.checkedChanged.connect(self._schedule_apply)
+        self.add_rule_btn.clicked.connect(self._on_add_rule)
+        self.del_rule_btn.clicked.connect(self._on_del_rules)
+        self.import_btn.clicked.connect(self._on_import_rules)
         self.export_btn.clicked.connect(self._export_rules)
-        self.add_proc_btn.clicked.connect(self._browse_exe)
-        self.del_proc_btn.clicked.connect(self._del_selected_procs)
+        self.add_proc_btn.clicked.connect(self._on_browse_exe)
+        self.del_proc_btn.clicked.connect(self._on_del_procs)
+        self.rules_table.cellChanged.connect(self._schedule_apply)
+
+    # --- Auto-apply ---
+
+    def _schedule_apply(self) -> None:
+        if not self._loading:
+            self._apply_timer.start()
 
     # --- Public API ---
 
@@ -300,6 +309,10 @@ class RoutingPage(QWidget):
 
         self._loading = False
 
+        # First launch: save defaults immediately
+        if use_defaults:
+            self._emit_apply()
+
     def set_tun_mode(self, enabled: bool) -> None:
         self._process_container.setEnabled(not enabled)
         self.add_proc_btn.setEnabled(not enabled)
@@ -320,14 +333,20 @@ class RoutingPage(QWidget):
         for label, data in _ACTIONS:
             combo.addItem(label, userData=data)
         self._select_combo_value(combo, action)
+        combo.currentIndexChanged.connect(self._schedule_apply)
         self.rules_table.setCellWidget(row, 1, combo)
 
-    def _del_selected_rules(self) -> None:
+    def _on_add_rule(self) -> None:
+        self._add_rule_row()
+
+    def _on_del_rules(self) -> None:
         rows = sorted({idx.row() for idx in self.rules_table.selectedIndexes()}, reverse=True)
         for r in rows:
             self.rules_table.removeRow(r)
+        if rows:
+            self._schedule_apply()
 
-    def _import_rules(self) -> None:
+    def _on_import_rules(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Импорт правил", "", "Text files (*.txt);;All files (*)"
         )
@@ -337,6 +356,7 @@ class RoutingPage(QWidget):
             text = Path(path).read_text(encoding="utf-8")
         except Exception:
             return
+        added = False
         for line in text.splitlines():
             line = line.strip()
             if not line or line.startswith("#"):
@@ -350,6 +370,9 @@ class RoutingPage(QWidget):
                 addr = line
                 action = "proxy"
             self._add_rule_row(addr.strip(), action)
+            added = True
+        if added:
+            self._schedule_apply()
 
     def _export_rules(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -382,9 +405,10 @@ class RoutingPage(QWidget):
         for label, data in _ACTIONS:
             combo.addItem(label, userData=data)
         self._select_combo_value(combo, action)
+        combo.currentIndexChanged.connect(self._schedule_apply)
         self.proc_table.setCellWidget(row, 1, combo)
 
-    def _browse_exe(self) -> None:
+    def _on_browse_exe(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self, "Выбрать приложение", "", "Executables (*.exe)"
         )
@@ -396,11 +420,14 @@ class RoutingPage(QWidget):
             if item and item.text().lower() == name.lower():
                 return
         self._add_process_row(name, "proxy")
+        self._schedule_apply()
 
-    def _del_selected_procs(self) -> None:
+    def _on_del_procs(self) -> None:
         rows = sorted({idx.row() for idx in self.proc_table.selectedIndexes()}, reverse=True)
         for r in rows:
             self.proc_table.removeRow(r)
+        if rows:
+            self._schedule_apply()
 
     # --- Emit ---
 
