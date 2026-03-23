@@ -71,7 +71,7 @@ def build_xray_relay_config(
             "protocol": "shadowsocks",
             "listen": "127.0.0.1",
             "port": relay_port,
-            "settings": {"method": "none", "password": "none", "network": "tcp,udp"},
+            "settings": {"method": "chacha20-ietf-poly1305", "password": "xftun-relay-bridge", "network": "tcp,udp"},
             "sniffing": {
                 "enabled": True,
                 "destOverride": ["http", "tls", "quic"],
@@ -108,8 +108,8 @@ def build_xray_relay_config(
             "servers": [{
                 "address": "127.0.0.1",
                 "port": protect_port,
-                "method": "none",
-                "password": "none",
+                "method": "chacha20-ietf-poly1305",
+                "password": "xftun-relay-bridge",
             }],
         },
     })
@@ -140,8 +140,8 @@ def _build_hybrid_config(
         "tag": "proxy",
         "server": "127.0.0.1",
         "server_port": relay_port,
-        "method": "none",
-        "password": "none",
+        "method": "chacha20-ietf-poly1305",
+        "password": "xftun-relay-bridge",
     }
 
     direct_out: dict[str, Any] = {"type": "direct", "tag": "direct"}
@@ -181,21 +181,22 @@ def _build_hybrid_config(
                 "tag": "tun-protect",
                 "listen": "127.0.0.1",
                 "listen_port": protect_port,
-                "method": "none",
-                "password": "none",
+                "method": "chacha20-ietf-poly1305",
+                "password": "xftun-relay-bridge",
             },
         ],
         "outbounds": outbounds,
         "route": {
             "auto_detect_interface": True,
-            "default_domain_resolver": "direct-dns",
             "rules": route_rules,
         },
         "dns": {
             "servers": [
-                {"tag": "direct-dns", "type": "udp", "server": "8.8.8.8", "detour": "direct"},
+                # No detour — DNS goes through default outbound (proxy → xray).
+                # xray handles DNS routing via its own rules.
+                {"tag": "dns-out", "type": "udp", "server": "8.8.8.8"},
             ],
-            "final": "direct-dns",
+            "final": "dns-out",
         },
         "experimental": {
             "clash_api": {
