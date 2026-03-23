@@ -106,16 +106,20 @@ def build_xray_config(node: Node, routing: RoutingSettings, settings: AppSetting
     # Merge service preset domains
     service_direct: list[str] = []
     service_proxy: list[str] = []
+    service_block: list[str] = []
     for svc_id, action in routing.service_routes.items():
         preset = SERVICE_PRESETS_BY_ID.get(svc_id)
         if not preset:
             continue
         if action == "direct":
             service_direct.extend(preset.domains)
+        elif action == "block":
+            service_block.extend(preset.domains)
         else:
             service_proxy.extend(preset.domains)
     _append_domain_ip_rule(routing_rules, service_proxy, "proxy")
     _append_domain_ip_rule(routing_rules, service_direct, "direct")
+    _append_domain_ip_rule(routing_rules, service_block, "block")
 
     if not settings.tun_mode:
         for pr in routing.process_rules:

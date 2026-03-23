@@ -28,6 +28,7 @@ from .node_edit_dialog import NodeEditDialog
 from .nodes_page import NodesPage
 from .routing_page import RoutingPage
 from .settings_page import SettingsPage
+from .about_page import AboutPage
 from .updates_page import UpdatesPage
 from .zapret_page import ZapretPage
 
@@ -60,6 +61,7 @@ class MainWindow(FluentWindow):
         self.logs_page = LogsPage(self)
         self.settings_page = SettingsPage(self)
         self.updates_page = UpdatesPage(self)
+        self.about_page = AboutPage(self)
 
         self._create_navigation()
         self._create_tray()
@@ -97,6 +99,7 @@ class MainWindow(FluentWindow):
         self.addSubInterface(self.routing_page, FIF.GLOBE, "Маршруты")
         self.addSubInterface(self.zapret_page, FIF.COMMAND_PROMPT, "Zapret")
         self.addSubInterface(self.logs_page, FIF.DOCUMENT, "Логи")
+        self.addSubInterface(self.about_page, FIF.INFO, "О проекте", NavigationItemPosition.BOTTOM)
         self.addSubInterface(self.updates_page, FIF.UPDATE, "Обновления", NavigationItemPosition.BOTTOM)
         self.addSubInterface(self.settings_page, FIF.SETTING, "Настройки", NavigationItemPosition.BOTTOM)
 

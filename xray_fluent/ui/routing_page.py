@@ -43,6 +43,7 @@ _ACTION_DATA = {label: data for label, data in _ACTIONS}
 _SERVICE_ACTIONS = [
     ("Прокси", "proxy"),
     ("Прямой", "direct"),
+    ("Блокировка", "block"),
 ]
 
 

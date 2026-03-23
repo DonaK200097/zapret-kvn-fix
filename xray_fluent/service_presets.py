@@ -356,7 +356,7 @@ SERVICE_PRESETS: tuple[ServicePreset, ...] = (
         name="Max.ru",
         icon=FIF.GLOBE,
         description="Max.ru и поддомены",
-        default_action="proxy",
+        default_action="block",
         domains=(
             "max.ru",
         ),

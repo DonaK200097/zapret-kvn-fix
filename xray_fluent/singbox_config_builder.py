@@ -81,13 +81,12 @@ def _build_hybrid_config(
         "tag": "proxy",
         "server": "127.0.0.1",
         "server_port": _XRAY_SOCKS_PORT,
-        "domain_resolver": "proxy-dns",
         # Bind to loopback explicitly — auto_detect_interface would bind
         # this socket to the physical NIC, breaking localhost connectivity.
         "inet4_bind_address": "127.0.0.1",
     }
 
-    direct_out: dict[str, Any] = {"type": "direct", "tag": "direct", "domain_resolver": "proxy-dns"}
+    direct_out: dict[str, Any] = {"type": "direct", "tag": "direct"}
     block_out: dict[str, Any] = {"type": "block", "tag": "block"}
 
     outbounds = [proxy_outbound, direct_out, block_out]
@@ -133,14 +132,18 @@ def _build_hybrid_config(
         "outbounds": outbounds,
         "route": {
             "auto_detect_interface": True,
-            "default_domain_resolver": "proxy-dns",
+            "default_domain_resolver": "direct-dns",
             "rules": route_rules,
         },
         "dns": {
             "servers": [
+                # In hybrid mode, xray handles domain-based routing via sniffing.
+                # sing-box only needs to resolve IPs — use fast direct DNS.
+                # Proxy DNS is available if direct fails or for specific rules.
+                {"tag": "direct-dns", "type": "udp", "server": "8.8.8.8", "detour": "direct"},
                 {"tag": "proxy-dns", "type": "https", "server": "1.1.1.1", "detour": "proxy"},
             ],
-            "final": "proxy-dns",
+            "final": "direct-dns",
         },
         "experimental": {
             "clash_api": {
