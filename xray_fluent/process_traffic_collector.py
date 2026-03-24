@@ -29,14 +29,18 @@ class ProcessTrafficSnapshot:
 
 # Session-scoped state
 _seen_connections: dict[str, set[str]] = {}
-_prev_totals: dict[str, tuple[int, int]] = {}  # {exe: (upload, download)}
+_conn_bytes: dict[str, tuple[int, int]] = {}  # {conn_id: (upload, download)} — last seen per connection
+_proc_closed_bytes: dict[str, tuple[int, int]] = {}  # {exe: (closed_up, closed_down)} — bytes from closed connections
+_prev_proc_total: dict[str, tuple[int, int]] = {}  # {exe: (total_up, total_down)} — for speed calc
 _prev_time: float = 0.0
 
 
 def reset_connection_tracking() -> None:
     """Call on disconnect to reset session counters."""
     _seen_connections.clear()
-    _prev_totals.clear()
+    _conn_bytes.clear()
+    _proc_closed_bytes.clear()
+    _prev_proc_total.clear()
     global _prev_time
     _prev_time = 0.0
 
@@ -56,6 +60,9 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
         return []
 
     connections = data.get("connections") or []
+
+    # Track which connection IDs are still active
+    active_conn_ids: set[str] = set()
 
     # Aggregate by process exe name
     by_proc: dict[str, dict[str, Any]] = {}
@@ -79,12 +86,14 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
         conn_down = conn.get("download", 0)
         conn_total = conn_up + conn_down
 
-        # Track unique connection IDs for total count
+        # Track unique connection IDs and their bytes
         conn_id = conn.get("id", "")
         if conn_id:
+            active_conn_ids.add(conn_id)
             if exe not in _seen_connections:
                 _seen_connections[exe] = set()
             _seen_connections[exe].add(conn_id)
+            _conn_bytes[conn_id] = (conn_up, conn_down)
         entry["upload"] += conn_up
         entry["download"] += conn_down
         entry["conns"] += 1
@@ -113,6 +122,17 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
             if pp:
                 entry["display_exe"] = os.path.basename(pp)
 
+    # Detect closed connections → accumulate their bytes into _proc_closed_bytes
+    closed_ids = set(_conn_bytes.keys()) - active_conn_ids
+    for cid in closed_ids:
+        up, down = _conn_bytes.pop(cid)
+        # Find which exe owned this connection
+        for exe_key, conn_set in _seen_connections.items():
+            if cid in conn_set:
+                prev_closed = _proc_closed_bytes.get(exe_key, (0, 0))
+                _proc_closed_bytes[exe_key] = (prev_closed[0] + up, prev_closed[1] + down)
+                break
+
     # Calculate per-process speed from delta
     import time as _time
     global _prev_time
@@ -137,17 +157,21 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
 
         total_conns = len(_seen_connections.get(exe, set()))
 
-        # Speed from delta
-        cur_up, cur_down = stats["upload"], stats["download"]
-        prev_up, prev_down = _prev_totals.get(exe, (0, 0))
-        up_speed = max(0.0, (cur_up - prev_up) / dt)
-        down_speed = max(0.0, (cur_down - prev_down) / dt)
-        _prev_totals[exe] = (cur_up, cur_down)
+        # Total bytes = active connections + closed connections
+        closed_up, closed_down = _proc_closed_bytes.get(exe, (0, 0))
+        total_up = stats["upload"] + closed_up
+        total_down = stats["download"] + closed_down
+
+        # Speed from monotonic total delta
+        prev_up, prev_down = _prev_proc_total.get(exe, (0, 0))
+        up_speed = max(0.0, (total_up - prev_up) / dt)
+        down_speed = max(0.0, (total_down - prev_down) / dt)
+        _prev_proc_total[exe] = (total_up, total_down)
 
         result.append(ProcessTrafficSnapshot(
             exe=stats["display_exe"],
-            upload=cur_up,
-            download=cur_down,
+            upload=total_up,
+            download=total_down,
             connections=stats["conns"],
             total_connections=total_conns,
             route=route,
