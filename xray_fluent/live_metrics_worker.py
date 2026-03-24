@@ -17,6 +17,7 @@ from .constants import XRAY_PATH_DEFAULT
 from .path_utils import resolve_configured_path
 from .ping_worker import tcp_ping
 from .process_traffic_collector import collect_process_stats, ProcessTrafficSnapshot
+from .win_proc_monitor import get_proxy_connections, ProxyProcessInfo
 
 
 class LiveMetricsWorker(QThread):
@@ -32,6 +33,8 @@ class LiveMetricsWorker(QThread):
         ping_interval_sec: float = 3.0,
         mode: str = "xray",
         clash_api_port: int = 19090,
+        socks_port: int = 10808,
+        http_port: int = 8080,
     ):
         super().__init__()
         self._xray_path = xray_path
@@ -44,6 +47,8 @@ class LiveMetricsWorker(QThread):
         self._last_ping_ms: int | None = None
         self._mode = mode
         self._clash_api_port = clash_api_port
+        self._socks_port = socks_port
+        self._http_port = http_port
 
     def stop(self) -> None:
         self._stopped = True
@@ -82,8 +87,23 @@ class LiveMetricsWorker(QThread):
                 last_ping_ts = now
 
             process_stats = None
-            if self._mode == "singbox" and iteration_count % 2 == 0:
-                process_stats = collect_process_stats(self._clash_api_port)
+            if iteration_count % 2 == 0:
+                if self._mode == "singbox":
+                    process_stats = collect_process_stats(self._clash_api_port)
+                else:
+                    # Proxy mode: use Windows API to find processes using proxy ports
+                    try:
+                        proxy_procs = get_proxy_connections(self._socks_port, self._http_port)
+                        if proxy_procs:
+                            process_stats = [
+                                ProcessTrafficSnapshot(
+                                    exe=p.exe, upload=0, download=0,
+                                    connections=p.connections, route="proxy",
+                                )
+                                for p in proxy_procs
+                            ]
+                    except Exception:
+                        pass
 
             self.metrics.emit(
                 {

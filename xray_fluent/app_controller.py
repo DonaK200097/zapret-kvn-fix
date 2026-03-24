@@ -510,7 +510,9 @@ class AppController(QObject):
     def disconnect_current(self, disable_proxy: bool = True, emit_status: bool = True) -> bool:
         self._traffic_history.end_session()
         from .process_traffic_collector import reset_connection_tracking
+        from .win_proc_monitor import clear_pid_cache
         reset_connection_tracking()
+        clear_pid_cache()
         if self._active_core == "singbox":
             if emit_status:
                 self.status.emit("info", "Остановка VPN...")
@@ -729,6 +731,8 @@ class AppController(QObject):
             ping_port=ping_port,
             mode=mode,
             clash_api_port=SINGBOX_CLASH_API_PORT,
+            socks_port=self.state.settings.socks_port,
+            http_port=self.state.settings.http_port,
         )
         self._metrics_worker.metrics.connect(self._on_live_metrics)
         self._metrics_worker.start()
