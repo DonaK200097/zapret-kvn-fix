@@ -1,6 +1,6 @@
 # Zapret KVN
 
-Простой VPN-клиент для Windows с обходом блокировок. Работает из коробки.
+Простой VPN-клиент для Windows с обходом блокировок от создателей [Zapret 2 GUI](https://github.com/youtubediscord/zapret). Работает из коробки.
 
 <img width="200" alt="image" src="https://github.com/user-attachments/assets/089ae538-686f-4b6d-94f6-c0ff56bd3664" /><img width="200" alt="image" src="https://github.com/user-attachments/assets/f144c777-d60c-440b-bc29-39285d588ac6" /><img width="200" alt="image" src="https://github.com/user-attachments/assets/f97650a0-d83c-4b49-9809-16c2d69f314c" />
 
