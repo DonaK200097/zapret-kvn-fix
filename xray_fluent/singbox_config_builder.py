@@ -195,7 +195,7 @@ def _build_hybrid_singbox_config(
                 "interface_name": f"xftun{os.getpid() % 10000}",
                 "address": ["172.19.0.1/30"],
                 "auto_route": True,
-                "strict_route": True,
+                "strict_route": False,
                 "stack": "mixed",
             },
             {
@@ -313,7 +313,7 @@ def _build_native_config(
                 "interface_name": f"xftun{os.getpid() % 10000}",
                 "address": ["172.19.0.1/30"],
                 "auto_route": True,
-                "strict_route": True,
+                "strict_route": False,
                 "stack": "mixed",
             },
         ],

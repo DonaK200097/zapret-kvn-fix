@@ -34,15 +34,35 @@ PROCESS_PRESETS: tuple[ProcessPreset, ...] = (
         default_action="proxy",
     ),
     ProcessPreset(
-        id="browsers",
-        name="Браузеры",
+        id="chrome",
+        name="Google Chrome",
         icon=FIF.GLOBE,
-        description="Chrome, Firefox, Edge, Opera, Brave, Vivaldi, Яндекс",
-        processes=(
-            "chrome.exe", "firefox.exe", "msedge.exe",
-            "opera.exe", "brave.exe", "vivaldi.exe",
-            "browser.exe",  # Yandex Browser
-        ),
+        description="Chrome, Chromium",
+        processes=("chrome.exe",),
+        default_action="proxy",
+    ),
+    ProcessPreset(
+        id="firefox",
+        name="Firefox",
+        icon=FIF.GLOBE,
+        description="Firefox, Waterfox, LibreWolf",
+        processes=("firefox.exe", "waterfox.exe", "librewolf.exe"),
+        default_action="proxy",
+    ),
+    ProcessPreset(
+        id="edge",
+        name="Microsoft Edge",
+        icon=FIF.GLOBE,
+        description="Edge",
+        processes=("msedge.exe",),
+        default_action="proxy",
+    ),
+    ProcessPreset(
+        id="opera",
+        name="Opera / Brave / Vivaldi",
+        icon=FIF.GLOBE,
+        description="Opera, Brave, Vivaldi, Яндекс Браузер",
+        processes=("opera.exe", "brave.exe", "vivaldi.exe", "browser.exe"),
         default_action="proxy",
     ),
     ProcessPreset(
