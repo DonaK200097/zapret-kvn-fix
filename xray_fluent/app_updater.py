@@ -11,7 +11,7 @@ import sys
 import tempfile
 import threading
 import urllib.request
-import zipfile
+import zipfile  # kept for legacy .zip support
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path

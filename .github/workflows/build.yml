@@ -144,15 +144,24 @@ jobs:
 
       # ── Release on push to main ──
 
-      - name: Create self-extracting installer
+      - name: Create release archives
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         shell: pwsh
         run: |
           cd dist/ZapretKVN
+
+          # Self-extracting exe for manual install
           7z a -t7z -mx=5 -sfx "../ZapretKVN-v$env:VERSION-windows-x64.exe" *
+
+          # Zip for auto-updater
+          7z a -tzip -mx=5 "../ZapretKVN-v$env:VERSION-windows-x64.zip" *
+
+          # 7z archive
+          7z a -t7z -mx=5 "../ZapretKVN-v$env:VERSION-windows-x64.7z" *
+
           cd ..
-          Write-Host "Release installer:"
-          Get-ChildItem *.exe | Format-Table Name, Length
+          Write-Host "Release archives:"
+          Get-ChildItem *.exe, *.zip, *.7z | Format-Table Name, Length
 
       - name: Create GitHub Release
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
@@ -164,6 +173,8 @@ jobs:
           make_latest: true
           files: |
             dist/ZapretKVN-*-windows-x64.exe
+            dist/ZapretKVN-*-windows-x64.zip
+            dist/ZapretKVN-*-windows-x64.7z
 
       - name: Commit version bump
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
