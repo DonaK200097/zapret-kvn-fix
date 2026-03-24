@@ -416,6 +416,8 @@ class DashboardPage(QWidget):
             self._down_history.clear()
             self._up_history.clear()
             self.traffic_graph.clear_data()
+            self._proc_traffic_table.setRowCount(0)
+            self._last_process_stats = None
         self._refresh_dashboard()
 
     def set_mode(self, mode: str) -> None:
