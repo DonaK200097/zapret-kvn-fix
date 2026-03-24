@@ -23,15 +23,22 @@ class ProcessTrafficSnapshot:
     proxy_bytes: int = 0   # bytes through proxy
     direct_bytes: int = 0  # bytes through direct
     top_host: str = ""     # most traffic host/domain
+    down_speed: float = 0.0  # bytes/sec download
+    up_speed: float = 0.0    # bytes/sec upload
 
 
-# Track seen connection IDs per process (session-scoped)
-_seen_connections: dict[str, set[str]] = {}  # {exe: {conn_id, ...}}
+# Session-scoped state
+_seen_connections: dict[str, set[str]] = {}
+_prev_totals: dict[str, tuple[int, int]] = {}  # {exe: (upload, download)}
+_prev_time: float = 0.0
 
 
 def reset_connection_tracking() -> None:
     """Call on disconnect to reset session counters."""
     _seen_connections.clear()
+    _prev_totals.clear()
+    global _prev_time
+    _prev_time = 0.0
 
 
 def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[ProcessTrafficSnapshot]:
@@ -106,6 +113,13 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
             if pp:
                 entry["display_exe"] = os.path.basename(pp)
 
+    # Calculate per-process speed from delta
+    import time as _time
+    global _prev_time
+    now = _time.monotonic()
+    dt = max(0.5, now - _prev_time) if _prev_time > 0 else 2.0
+    _prev_time = now
+
     # Build snapshots
     result: list[ProcessTrafficSnapshot] = []
     for exe, stats in by_proc.items():
@@ -117,23 +131,31 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
         else:
             route = "direct"
 
-        # Top host by traffic
         top_host = ""
         if stats["hosts"]:
             top_host = max(stats["hosts"], key=stats["hosts"].get)
 
         total_conns = len(_seen_connections.get(exe, set()))
 
+        # Speed from delta
+        cur_up, cur_down = stats["upload"], stats["download"]
+        prev_up, prev_down = _prev_totals.get(exe, (0, 0))
+        up_speed = max(0.0, (cur_up - prev_up) / dt)
+        down_speed = max(0.0, (cur_down - prev_down) / dt)
+        _prev_totals[exe] = (cur_up, cur_down)
+
         result.append(ProcessTrafficSnapshot(
             exe=stats["display_exe"],
-            upload=stats["upload"],
-            download=stats["download"],
+            upload=cur_up,
+            download=cur_down,
             connections=stats["conns"],
             total_connections=total_conns,
             route=route,
             proxy_bytes=stats["proxy_bytes"],
             direct_bytes=stats["direct_bytes"],
             top_host=top_host,
+            down_speed=down_speed,
+            up_speed=up_speed,
         ))
 
     # Sort by total traffic descending

@@ -224,16 +224,16 @@ class DashboardPage(QWidget):
         self._proc_traffic_table = TableWidget(self._proc_traffic_card)
         self._proc_traffic_table.setColumnCount(7)
         self._proc_traffic_table.setHorizontalHeaderLabels(
-            ["Процесс", "VPN", "Прямой", "Соед.", "Хост", "↓ Всего", "↑ Всего"]
+            ["Процесс", "Скорость", "VPN", "Прямой", "Соед.", "Хост", "Всего"]
         )
         _col_tooltips = [
             "Имя исполняемого файла приложения",
-            "Трафик через VPN (зашифрованный, через прокси-сервер)",
-            "Трафик напрямую (без VPN, к серверу напрямую)",
+            "Текущая скорость загрузки/выгрузки",
+            "Объём трафика через VPN (зашифрованный, через прокси-сервер)",
+            "Объём трафика напрямую (без VPN, к серверу напрямую)",
             "Активные соединения (всего за сессию)",
             "Домен или IP с наибольшим трафиком",
-            "Общий объём загрузки (скачивание)",
-            "Общий объём выгрузки (отправка)",
+            "Общий объём трафика за сессию",
         ]
         for col, tip in enumerate(_col_tooltips):
             item = self._proc_traffic_table.horizontalHeaderItem(col)
@@ -243,9 +243,9 @@ class DashboardPage(QWidget):
             0, QHeaderView.ResizeMode.Interactive
         )
         self._proc_traffic_table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.Stretch
+            5, QHeaderView.ResizeMode.Stretch
         )
-        for col in (1, 2, 3, 5, 6):
+        for col in (1, 2, 3, 4, 6):
             self._proc_traffic_table.horizontalHeader().setSectionResizeMode(
                 col, QHeaderView.ResizeMode.ResizeToContents
             )
@@ -337,15 +337,15 @@ class DashboardPage(QWidget):
         self._proc_detail_table = TableWidget(self._proc_detail_page)
         self._proc_detail_table.setColumnCount(7)
         self._proc_detail_table.setHorizontalHeaderLabels(
-            ["Процесс", "VPN", "Прямой", "Соединения", "Основной хост", "↓ Всего", "↑ Всего"]
+            ["Процесс", "Скорость", "VPN", "Прямой", "Соединения", "Основной хост", "Всего"]
         )
         self._proc_detail_table.horizontalHeader().setSectionResizeMode(
             0, QHeaderView.ResizeMode.Interactive
         )
         self._proc_detail_table.horizontalHeader().setSectionResizeMode(
-            4, QHeaderView.ResizeMode.Stretch
+            5, QHeaderView.ResizeMode.Stretch
         )
-        for col in (1, 2, 3, 5, 6):
+        for col in (1, 2, 3, 4, 6):
             self._proc_detail_table.horizontalHeader().setSectionResizeMode(
                 col, QHeaderView.ResizeMode.ResizeToContents
             )
@@ -470,27 +470,29 @@ class DashboardPage(QWidget):
             return
         self._proc_traffic_table.setRowCount(len(stats))
         for row, ps in enumerate(stats):
-            # Process name
+            # 0: Process name
             self._proc_traffic_table.setItem(row, 0, QTableWidgetItem(ps.exe))
-            # VPN traffic (green)
+            # 1: Speed (↓/↑)
+            speed = f"↓{_format_speed(ps.down_speed)}  ↑{_format_speed(ps.up_speed)}"
+            self._proc_traffic_table.setItem(row, 1, QTableWidgetItem(speed))
+            # 2: VPN traffic (green)
             vpn_item = QTableWidgetItem(self._format_bytes(ps.proxy_bytes))
             if ps.proxy_bytes > 0:
                 vpn_item.setForeground(QColor("#2ecc71"))
-            self._proc_traffic_table.setItem(row, 1, vpn_item)
-            # Direct traffic
-            self._proc_traffic_table.setItem(row, 2, QTableWidgetItem(self._format_bytes(ps.direct_bytes)))
-            # Connections: active (total)
+            self._proc_traffic_table.setItem(row, 2, vpn_item)
+            # 3: Direct traffic
+            self._proc_traffic_table.setItem(row, 3, QTableWidgetItem(self._format_bytes(ps.direct_bytes)))
+            # 4: Connections active (total)
             conn_text = f"{ps.connections} ({ps.total_connections})" if ps.total_connections > ps.connections else str(ps.connections)
-            self._proc_traffic_table.setItem(row, 3, QTableWidgetItem(conn_text))
-            # Top host
+            self._proc_traffic_table.setItem(row, 4, QTableWidgetItem(conn_text))
+            # 5: Top host
             host = ps.top_host
             if len(host) > 30:
                 host = host[:27] + "..."
-            self._proc_traffic_table.setItem(row, 4, QTableWidgetItem(host))
-            # ↓ Total download
-            self._proc_traffic_table.setItem(row, 5, QTableWidgetItem(self._format_bytes(ps.download)))
-            # ↑ Total upload
-            self._proc_traffic_table.setItem(row, 6, QTableWidgetItem(self._format_bytes(ps.upload)))
+            self._proc_traffic_table.setItem(row, 5, QTableWidgetItem(host))
+            # 6: Total session
+            total = ps.upload + ps.download
+            self._proc_traffic_table.setItem(row, 6, QTableWidgetItem(self._format_bytes(total)))
         # Update detail page if visible
         if self._stack.currentIndex() == 2:
             self._update_proc_detail_table()
