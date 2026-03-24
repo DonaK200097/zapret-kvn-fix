@@ -442,6 +442,7 @@ class AppController(QObject):
 
             if engine == "singbox":
                 # --- sing-box TUN (experimental, supports process routing) ---
+                self._active_core = "singbox"  # Set early so metrics worker gets correct mode
                 bundle = build_singbox_config(node, self.state.routing, self.state.settings)
 
                 if bundle.is_hybrid:
@@ -463,11 +464,11 @@ class AppController(QObject):
                         self.xray.stop()
                     self.status.emit("error", "Не удалось создать TUN адаптер. Проверьте наличие wintun.dll в core/.")
                     return False
-                self._active_core = "singbox"
                 self._protect_ss_port = bundle.protect_port
                 self._protect_ss_password = bundle.protect_password
             else:
                 # --- tun2socks TUN (stable, default) ---
+                self._active_core = "tun2socks"
                 config = build_xray_config(node, self.state.routing, self.state.settings)
                 config["log"] = {"loglevel": "error"}
                 xray_ok = self.xray.start(self.state.settings.xray_path, config)
@@ -485,13 +486,12 @@ class AppController(QObject):
                     self.xray.stop()
                     self.status.emit("error", "Не удалось создать TUN адаптер. Проверьте наличие tun2socks и wintun.dll в core/.")
                     return False
-                self._active_core = "tun2socks"
         else:
+            self._active_core = "xray"
             config = build_xray_config(node, self.state.routing, self.state.settings)
             ok = self.xray.start(self.state.settings.xray_path, config)
             if not ok:
                 return False
-            self._active_core = "xray"
 
             if self.state.settings.enable_system_proxy:
                 self.proxy.enable(
