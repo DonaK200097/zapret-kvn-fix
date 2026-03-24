@@ -112,6 +112,22 @@ class HistoryPage(QWidget):
         self._sessions_table.setMinimumHeight(300)
         root.addWidget(self._sessions_table)
 
+        # ── Daily totals table ──
+        root.addWidget(BodyLabel("Трафик по дням", container))
+
+        self._daily_table = TableWidget(container)
+        self._daily_table.setColumnCount(3)
+        self._daily_table.setHorizontalHeaderLabels(["Дата", "Загрузка", "Отдача"])
+        self._daily_table.setEditTriggers(TableWidget.EditTrigger.NoEditTriggers)
+        self._daily_table.setSelectionBehavior(TableWidget.SelectionBehavior.SelectRows)
+        self._daily_table.verticalHeader().setVisible(False)
+        dhdr = self._daily_table.horizontalHeader()
+        dhdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        dhdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        dhdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self._daily_table.setMinimumHeight(180)
+        root.addWidget(self._daily_table)
+
         # ── Per-process totals table ──
         root.addWidget(BodyLabel("Трафик по процессам (итого за период)", container))
 
@@ -188,6 +204,18 @@ class HistoryPage(QWidget):
             if len(s.processes) > 5:
                 procs += f" (+{len(s.processes) - 5})"
             self._sessions_table.setItem(row, 6, QTableWidgetItem(procs))
+
+        # Daily totals
+        daily = self._storage.get_daily_totals(days)
+        sorted_days = sorted(daily.items(), key=lambda kv: kv[0], reverse=True)
+        self._daily_table.setRowCount(len(sorted_days))
+        for row, (date_key, totals) in enumerate(sorted_days):
+            self._daily_table.setItem(row, 0, QTableWidgetItem(date_key))
+            down_item = QTableWidgetItem(_fmt_bytes(totals.get("download", 0)))
+            if totals.get("download", 0) > 0:
+                down_item.setForeground(QColor("#2ecc71"))
+            self._daily_table.setItem(row, 1, down_item)
+            self._daily_table.setItem(row, 2, QTableWidgetItem(_fmt_bytes(totals.get("upload", 0))))
 
         # Process totals
         proc_totals = self._storage.get_process_totals(days)

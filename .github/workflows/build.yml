@@ -87,16 +87,10 @@ jobs:
           Copy-Item _wintun/wintun/bin/amd64/wintun.dll core/
           Remove-Item -Recurse _wintun, wintun.zip
 
-          # ── sing-box (1.14+ required for dialerProxy) ──
+          # ── sing-box (latest, including pre-release) ──
           Write-Host "Downloading sing-box..."
-          $sbReleases = Invoke-RestMethod "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=20"
-          $sbRelease = $sbReleases | Where-Object {
-            -not $_.prerelease -and [version]($_.tag_name.TrimStart("v") -replace '-.*$','') -ge [version]"1.14.0"
-          } | Select-Object -First 1
-          if (-not $sbRelease) {
-            # Fallback: use latest release
-            $sbRelease = Invoke-RestMethod "https://api.github.com/repos/SagerNet/sing-box/releases/latest"
-          }
+          $sbReleases = Invoke-RestMethod "https://api.github.com/repos/SagerNet/sing-box/releases?per_page=10"
+          $sbRelease = $sbReleases | Where-Object { -not $_.draft } | Select-Object -First 1
           Write-Host "Using sing-box $($sbRelease.tag_name)"
           $sbAsset = $sbRelease.assets | Where-Object { $_.name -match "windows-amd64\.zip$" -and $_.name -notmatch "\.sig" }
           Invoke-WebRequest $sbAsset.browser_download_url -OutFile singbox.zip
