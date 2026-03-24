@@ -167,28 +167,24 @@ class DashboardPage(QWidget):
         self.toggle_btn = PrimaryPushButton(FIF.PLAY_SOLID, "Запустить прокси", self.connection_card)
         connection_layout.addWidget(self.toggle_btn)
 
+        # Profile selector inside connection card
+        connection_layout.addSpacing(4)
+        self.node_combo = ComboBox(self.connection_card)
+        connection_layout.addWidget(self.node_combo)
+
         connection_layout.addStretch(1)
+        self.connection_status_label.setWordWrap(True)
         connection_layout.addWidget(self.connection_status_label)
+        self.connection_target_label.setWordWrap(True)
         connection_layout.addWidget(self.connection_target_label)
 
-        # ── Profile card ──────────────────────────────────────
-        self.profile_card = CardWidget(self)
-        profile_layout = QVBoxLayout(self.profile_card)
-        profile_layout.setContentsMargins(18, 16, 18, 16)
-        profile_layout.setSpacing(8)
-        profile_layout.addWidget(StrongBodyLabel("Активный профиль", self.profile_card))
-        self.node_combo = ComboBox(self.profile_card)
-        profile_layout.addWidget(self.node_combo)
-        self.profile_name_label = BodyLabel("Профиль не выбран", self.profile_card)
-        self.profile_endpoint_label = CaptionLabel("Сначала импортируйте или выберите узел", self.profile_card)
-        self.profile_group_label = CaptionLabel("Группа: --", self.profile_card)
-        self.profile_latency_label = CaptionLabel("Задержка: --", self.profile_card)
+        # Profile info labels (inside connection card)
+        self.profile_name_label = BodyLabel("Профиль не выбран", self.connection_card)
+        self.profile_endpoint_label = CaptionLabel("", self.connection_card)
+        self.profile_group_label = CaptionLabel("Группа: --", self.connection_card)
+        self.profile_latency_label = CaptionLabel("Задержка: --", self.connection_card)
         self.profile_endpoint_label.setWordWrap(True)
-        profile_layout.addWidget(self.profile_name_label)
-        profile_layout.addStretch(1)
-        profile_layout.addWidget(self.profile_endpoint_label)
-        profile_layout.addWidget(self.profile_group_label)
-        profile_layout.addWidget(self.profile_latency_label)
+        # These are updated but not shown separately — info goes into status/target labels
 
         # ── Traffic card ──────────────────────────────────────
         self.traffic_card = CardWidget(self)
@@ -236,7 +232,6 @@ class DashboardPage(QWidget):
         )
         self._proc_traffic_table.setMinimumHeight(150)
         proc_layout.addWidget(self._proc_traffic_table, 1)
-        self._proc_traffic_card.setVisible(False)
 
         # ── Routing card ──────────────────────────────────────
         self.routing_card = CardWidget(self)
@@ -261,10 +256,9 @@ class DashboardPage(QWidget):
         routing_layout.addWidget(self.routing_bypass_label)
 
         grid.addWidget(self.connection_card, 0, 0)
-        grid.addWidget(self.profile_card, 0, 1)
+        grid.addWidget(self.routing_card, 0, 1)
         grid.addWidget(self.traffic_card, 1, 0)
-        grid.addWidget(self.routing_card, 1, 1)
-        grid.addWidget(self._proc_traffic_card, 2, 0, 1, 2)
+        grid.addWidget(self._proc_traffic_card, 1, 1)
         root.addLayout(grid)
         root.addStretch(1)
 
@@ -408,7 +402,6 @@ class DashboardPage(QWidget):
     def set_process_stats(self, stats: list | None) -> None:
         if stats is None:
             return
-        self._proc_traffic_card.setVisible(bool(stats))
         self._proc_traffic_table.setRowCount(len(stats))
         for row, ps in enumerate(stats):
             self._proc_traffic_table.setItem(row, 0, QTableWidgetItem(ps.exe))
