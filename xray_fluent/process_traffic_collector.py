@@ -18,10 +18,20 @@ class ProcessTrafficSnapshot:
     upload: int         # bytes total (cumulative)
     download: int       # bytes total (cumulative)
     connections: int    # active connection count
-    route: str          # "proxy" | "direct" | "mixed"
+    total_connections: int = 0  # all-time unique connections
+    route: str = "direct"      # "proxy" | "direct" | "mixed"
     proxy_bytes: int = 0   # bytes through proxy
     direct_bytes: int = 0  # bytes through direct
     top_host: str = ""     # most traffic host/domain
+
+
+# Track seen connection IDs per process (session-scoped)
+_seen_connections: dict[str, set[str]] = {}  # {exe: {conn_id, ...}}
+
+
+def reset_connection_tracking() -> None:
+    """Call on disconnect to reset session counters."""
+    _seen_connections.clear()
 
 
 def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[ProcessTrafficSnapshot]:
@@ -61,6 +71,13 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
         conn_up = conn.get("upload", 0)
         conn_down = conn.get("download", 0)
         conn_total = conn_up + conn_down
+
+        # Track unique connection IDs for total count
+        conn_id = conn.get("id", "")
+        if conn_id:
+            if exe not in _seen_connections:
+                _seen_connections[exe] = set()
+            _seen_connections[exe].add(conn_id)
         entry["upload"] += conn_up
         entry["download"] += conn_down
         entry["conns"] += 1
@@ -105,11 +122,14 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
         if stats["hosts"]:
             top_host = max(stats["hosts"], key=stats["hosts"].get)
 
+        total_conns = len(_seen_connections.get(exe, set()))
+
         result.append(ProcessTrafficSnapshot(
             exe=stats["display_exe"],
             upload=stats["upload"],
             download=stats["download"],
             connections=stats["conns"],
+            total_connections=total_conns,
             route=route,
             proxy_bytes=stats["proxy_bytes"],
             direct_bytes=stats["direct_bytes"],

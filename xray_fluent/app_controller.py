@@ -509,6 +509,8 @@ class AppController(QObject):
 
     def disconnect_current(self, disable_proxy: bool = True, emit_status: bool = True) -> bool:
         self._traffic_history.end_session()
+        from .process_traffic_collector import reset_connection_tracking
+        reset_connection_tracking()
         if self._active_core == "singbox":
             if emit_status:
                 self.status.emit("info", "Остановка VPN...")

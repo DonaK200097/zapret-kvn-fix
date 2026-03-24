@@ -213,9 +213,10 @@ class DashboardPage(QWidget):
         proc_header = QHBoxLayout()
         proc_header.addWidget(StrongBodyLabel("Трафик по процессам", self._proc_traffic_card))
         proc_header.addStretch(1)
-        self._proc_detail_btn = PrimaryPushButton(FIF.CHEVRON_RIGHT, "", self._proc_traffic_card)
-        self._proc_detail_btn.setFixedSize(28, 28)
-        self._proc_detail_btn.setToolTip("Подробнее")
+        from qfluentwidgets import TransparentToolButton
+        self._proc_detail_btn = TransparentToolButton(FIF.CHEVRON_RIGHT_MED, self._proc_traffic_card)
+        self._proc_detail_btn.setFixedSize(32, 32)
+        self._proc_detail_btn.setToolTip("Развернуть на весь экран")
         self._proc_detail_btn.clicked.connect(self._show_proc_page)
         proc_header.addWidget(self._proc_detail_btn)
         proc_layout.addLayout(proc_header)
@@ -461,8 +462,9 @@ class DashboardPage(QWidget):
             self._proc_traffic_table.setItem(row, 1, vpn_item)
             # Direct traffic
             self._proc_traffic_table.setItem(row, 2, QTableWidgetItem(self._format_bytes(ps.direct_bytes)))
-            # Connections
-            self._proc_traffic_table.setItem(row, 3, QTableWidgetItem(str(ps.connections)))
+            # Connections: active (total)
+            conn_text = f"{ps.connections} ({ps.total_connections})" if ps.total_connections > ps.connections else str(ps.connections)
+            self._proc_traffic_table.setItem(row, 3, QTableWidgetItem(conn_text))
             # Top host
             host = ps.top_host
             if len(host) > 30:
