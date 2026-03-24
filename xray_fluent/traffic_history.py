@@ -145,7 +145,6 @@ class TrafficHistoryStorage:
         if self._current_session:
             self._current_session.ended_at = datetime.now(timezone.utc).isoformat()
             self._current_session = None
-            self._cleanup_old_sessions()
             self._save()
 
     def save_periodic(self) -> None:
