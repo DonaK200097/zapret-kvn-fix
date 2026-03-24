@@ -210,7 +210,15 @@ class DashboardPage(QWidget):
         proc_layout = QVBoxLayout(self._proc_traffic_card)
         proc_layout.setContentsMargins(18, 16, 18, 16)
         proc_layout.setSpacing(6)
-        proc_layout.addWidget(StrongBodyLabel("Трафик по процессам", self._proc_traffic_card))
+        proc_header = QHBoxLayout()
+        proc_header.addWidget(StrongBodyLabel("Трафик по процессам", self._proc_traffic_card))
+        proc_header.addStretch(1)
+        self._proc_detail_btn = PrimaryPushButton(FIF.CHEVRON_RIGHT, "", self._proc_traffic_card)
+        self._proc_detail_btn.setFixedSize(28, 28)
+        self._proc_detail_btn.setToolTip("Подробнее")
+        self._proc_detail_btn.clicked.connect(self._show_proc_page)
+        proc_header.addWidget(self._proc_detail_btn)
+        proc_layout.addLayout(proc_header)
 
         self._proc_traffic_table = TableWidget(self._proc_traffic_card)
         self._proc_traffic_table.setColumnCount(6)
@@ -296,6 +304,42 @@ class DashboardPage(QWidget):
         detail_stats_row.addWidget(self._detail_peak_label)
         detail_stats_row.addStretch(1)
         detail_layout.addLayout(detail_stats_row)
+
+        # ── Page 2: process traffic detail subpage ─────────────
+        self._proc_detail_page = QWidget()
+        self._proc_detail_page.setStyleSheet("QWidget { background: transparent; }")
+        self._stack.addWidget(self._proc_detail_page)
+
+        proc_detail_layout = QVBoxLayout(self._proc_detail_page)
+        proc_detail_layout.setContentsMargins(24, 20, 24, 20)
+        proc_detail_layout.setSpacing(12)
+
+        self._proc_breadcrumb = BreadcrumbBar(self._proc_detail_page)
+        self._proc_breadcrumb.addItem("dashboard", "Панель управления")
+        self._proc_breadcrumb.addItem("processes", "Трафик по процессам")
+        self._proc_breadcrumb.currentItemChanged.connect(self._on_proc_breadcrumb)
+        proc_detail_layout.addWidget(self._proc_breadcrumb)
+
+        self._proc_detail_table = TableWidget(self._proc_detail_page)
+        self._proc_detail_table.setColumnCount(6)
+        self._proc_detail_table.setHorizontalHeaderLabels(
+            ["Процесс", "VPN", "Прямой", "Соединения", "Основной хост", "Всего"]
+        )
+        self._proc_detail_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Interactive
+        )
+        self._proc_detail_table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.Stretch
+        )
+        for col in (1, 2, 3, 5):
+            self._proc_detail_table.horizontalHeader().setSectionResizeMode(
+                col, QHeaderView.ResizeMode.ResizeToContents
+            )
+        self._proc_detail_table.verticalHeader().setVisible(False)
+        self._proc_detail_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._proc_detail_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self._proc_detail_table.setMinimumHeight(400)
+        proc_detail_layout.addWidget(self._proc_detail_table, 1)
 
         # ── Signal connections ────────────────────────────────
         self.node_combo.currentIndexChanged.connect(self._on_node_changed)
@@ -427,6 +471,9 @@ class DashboardPage(QWidget):
             # Total
             total = ps.upload + ps.download
             self._proc_traffic_table.setItem(row, 5, QTableWidgetItem(self._format_bytes(total)))
+        # Update detail page if visible
+        if self._stack.currentIndex() == 2:
+            self._update_proc_detail_table()
 
     @staticmethod
     def _format_bytes(b: int) -> str:
@@ -525,6 +572,38 @@ class DashboardPage(QWidget):
         self._traffic_breadcrumb.addItem("dashboard", "Панель управления")
         self._traffic_breadcrumb.addItem("traffic", "Трафик")
         self._traffic_breadcrumb.blockSignals(False)
+
+    # ── Process subpage navigation ──────────────────────────
+
+    def _show_proc_page(self) -> None:
+        self._update_proc_detail_table()
+        self._reset_proc_breadcrumb()
+        self._stack.setCurrentIndex(2)
+
+    def _on_proc_breadcrumb(self, routeKey: str) -> None:
+        if routeKey == "dashboard":
+            self._show_main_page()
+
+    def _reset_proc_breadcrumb(self) -> None:
+        self._proc_breadcrumb.blockSignals(True)
+        self._proc_breadcrumb.clear()
+        self._proc_breadcrumb.addItem("dashboard", "Панель управления")
+        self._proc_breadcrumb.addItem("processes", "Трафик по процессам")
+        self._proc_breadcrumb.blockSignals(False)
+
+    def _update_proc_detail_table(self) -> None:
+        """Copy current compact table data to detail table."""
+        src = self._proc_traffic_table
+        dst = self._proc_detail_table
+        rows = src.rowCount()
+        dst.setRowCount(rows)
+        for r in range(rows):
+            for c in range(6):
+                item = src.item(r, c)
+                if item:
+                    new_item = QTableWidgetItem(item.text())
+                    new_item.setForeground(item.foreground())
+                    dst.setItem(r, c, new_item)
 
     # ── Helpers ───────────────────────────────────────────────
 
