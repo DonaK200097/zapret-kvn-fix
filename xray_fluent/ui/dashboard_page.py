@@ -167,10 +167,9 @@ class DashboardPage(QWidget):
         self.toggle_btn = PrimaryPushButton(FIF.PLAY_SOLID, "Запустить прокси", self.connection_card)
         connection_layout.addWidget(self.toggle_btn)
 
-        # Profile selector inside connection card
-        connection_layout.addSpacing(4)
+        # Hidden node combo (keeps selection logic intact, UI on nodes page)
         self.node_combo = ComboBox(self.connection_card)
-        connection_layout.addWidget(self.node_combo)
+        self.node_combo.setVisible(False)
 
         connection_layout.addStretch(1)
         self.connection_status_label.setWordWrap(True)
@@ -178,13 +177,12 @@ class DashboardPage(QWidget):
         self.connection_target_label.setWordWrap(True)
         connection_layout.addWidget(self.connection_target_label)
 
-        # Profile info labels (inside connection card)
+        # Profile info labels (read-only)
         self.profile_name_label = BodyLabel("Профиль не выбран", self.connection_card)
         self.profile_endpoint_label = CaptionLabel("", self.connection_card)
+        self.profile_endpoint_label.setWordWrap(True)
         self.profile_group_label = CaptionLabel("Группа: --", self.connection_card)
         self.profile_latency_label = CaptionLabel("Задержка: --", self.connection_card)
-        self.profile_endpoint_label.setWordWrap(True)
-        # These are updated but not shown separately — info goes into status/target labels
 
         # ── Traffic card ──────────────────────────────────────
         self.traffic_card = CardWidget(self)
