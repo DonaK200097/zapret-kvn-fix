@@ -193,6 +193,10 @@ class AppSettings:
     window_y: int = -1
     zapret_preset: str = ""
     zapret_autostart: bool = False
+    auto_switch_enabled: bool = True
+    auto_switch_threshold_kbps: int = 50
+    auto_switch_delay_sec: int = 30
+    auto_switch_cooldown_sec: int = 60
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -223,6 +227,10 @@ class AppSettings:
             "window_y": self.window_y,
             "zapret_preset": self.zapret_preset,
             "zapret_autostart": self.zapret_autostart,
+            "auto_switch_enabled": self.auto_switch_enabled,
+            "auto_switch_threshold_kbps": self.auto_switch_threshold_kbps,
+            "auto_switch_delay_sec": self.auto_switch_delay_sec,
+            "auto_switch_cooldown_sec": self.auto_switch_cooldown_sec,
         }
 
     @staticmethod
@@ -255,6 +263,10 @@ class AppSettings:
             window_y=int(data.get("window_y", -1)),
             zapret_preset=str(data.get("zapret_preset") or ""),
             zapret_autostart=bool(data.get("zapret_autostart", False)),
+            auto_switch_enabled=bool(data.get("auto_switch_enabled", True)),
+            auto_switch_threshold_kbps=int(data.get("auto_switch_threshold_kbps") or 50),
+            auto_switch_delay_sec=int(data.get("auto_switch_delay_sec") or 30),
+            auto_switch_cooldown_sec=int(data.get("auto_switch_cooldown_sec") or 60),
         )
 
 

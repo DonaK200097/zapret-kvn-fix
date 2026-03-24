@@ -192,6 +192,38 @@ class SettingsPage(QWidget):
         root.addWidget(network_group)
 
         # ============================================================
+        # Auto-switch
+        # ============================================================
+        auto_switch_group = SettingCardGroup("Авто-переключение", container)
+
+        self.auto_switch_card = SwitchSettingCard(
+            FIF.SYNC, "Авто-переключение при падении скорости",
+            "Автоматически переключаться на другой сервер при низкой скорости",
+            parent=auto_switch_group,
+        )
+        self.auto_switch_threshold_card = _SpinCard(
+            FIF.SPEED_HIGH, "Порог скорости (КБ/с)",
+            "Минимальная скорость загрузки для срабатывания",
+            min_val=1, max_val=10000, parent=auto_switch_group,
+        )
+        self.auto_switch_delay_card = _SpinCard(
+            FIF.STOP_WATCH, "Задержка (секунды)",
+            "Время ожидания перед переключением",
+            min_val=5, max_val=300, parent=auto_switch_group,
+        )
+        self.auto_switch_cooldown_card = _SpinCard(
+            FIF.HISTORY, "Кулдаун (секунды)",
+            "Минимальный интервал между автопереключениями",
+            min_val=10, max_val=600, parent=auto_switch_group,
+        )
+
+        auto_switch_group.addSettingCard(self.auto_switch_card)
+        auto_switch_group.addSettingCard(self.auto_switch_threshold_card)
+        auto_switch_group.addSettingCard(self.auto_switch_delay_card)
+        auto_switch_group.addSettingCard(self.auto_switch_cooldown_card)
+        root.addWidget(auto_switch_group)
+
+        # ============================================================
         # Core paths
         # ============================================================
         paths_group = SettingCardGroup("Пути к ядрам", container)
@@ -356,6 +388,11 @@ class SettingsPage(QWidget):
         self.allow_updates_card.checkedChanged.connect(self._auto_save)
         self.xray_auto_update_card.checkedChanged.connect(self._auto_save)
 
+        self.auto_switch_card.checkedChanged.connect(self._auto_save)
+        self.auto_switch_threshold_card.spin.valueChanged.connect(self._auto_save)
+        self.auto_switch_delay_card.spin.valueChanged.connect(self._auto_save)
+        self.auto_switch_cooldown_card.spin.valueChanged.connect(self._auto_save)
+
         self.auto_lock_card.spin.valueChanged.connect(self._auto_save)
 
     # ================================================================
@@ -394,6 +431,11 @@ class SettingsPage(QWidget):
         self.check_updates_card.setChecked(settings.check_updates)
         self.allow_updates_card.setChecked(settings.allow_updates)
         self.xray_auto_update_card.setChecked(settings.xray_auto_update)
+
+        self.auto_switch_card.setChecked(settings.auto_switch_enabled)
+        self.auto_switch_threshold_card.spin.setValue(settings.auto_switch_threshold_kbps)
+        self.auto_switch_delay_card.spin.setValue(settings.auto_switch_delay_sec)
+        self.auto_switch_cooldown_card.spin.setValue(settings.auto_switch_cooldown_sec)
 
         self.auto_lock_card.spin.setValue(security.auto_lock_minutes)
         self.password_card.edit.clear()
@@ -481,6 +523,10 @@ class SettingsPage(QWidget):
         data.check_updates = self.check_updates_card.isChecked()
         data.allow_updates = self.allow_updates_card.isChecked()
         data.xray_auto_update = self.xray_auto_update_card.isChecked()
+        data.auto_switch_enabled = self.auto_switch_card.isChecked()
+        data.auto_switch_threshold_kbps = int(self.auto_switch_threshold_card.spin.value())
+        data.auto_switch_delay_sec = int(self.auto_switch_delay_card.spin.value())
+        data.auto_switch_cooldown_sec = int(self.auto_switch_cooldown_card.spin.value())
         self.save_requested.emit(data)
         self.auto_lock_minutes_changed.emit(int(self.auto_lock_card.spin.value()))
 

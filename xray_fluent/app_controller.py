@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
 import json
 from logging.handlers import RotatingFileHandler
@@ -47,6 +48,7 @@ class AppController(QObject):
     xray_update_result = pyqtSignal(object)
     lock_state_changed = pyqtSignal(bool)
     passphrase_required = pyqtSignal()
+    auto_switch_triggered = pyqtSignal(str)  # node name we're switching to
 
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
@@ -92,6 +94,12 @@ class AppController(QObject):
         self._protect_ss_password: str = ""
         self._traffic_history = TrafficHistoryStorage()
         self._traffic_save_counter = 0
+
+        # --- Auto-switch state ---
+        self._auto_switch_low_since: float = 0.0  # monotonic timestamp when speed first dropped
+        self._auto_switch_last_switch: float = 0.0  # monotonic timestamp of last auto-switch
+        self._auto_switch_high_ticks: int = 0  # consecutive readings above threshold
+        self._auto_switch_active_download: bool = False  # True after sustained traffic
 
         self.xray.log_received.connect(self._on_xray_log)
         self.xray.error.connect(self._on_xray_error)
@@ -508,6 +516,9 @@ class AppController(QObject):
         return True
 
     def disconnect_current(self, disable_proxy: bool = True, emit_status: bool = True) -> bool:
+        self._auto_switch_low_since = 0.0
+        self._auto_switch_high_ticks = 0
+        self._auto_switch_active_download = False
         self._traffic_history.end_session()
         from .process_traffic_collector import reset_connection_tracking
         from .win_proc_monitor import clear_pid_cache
@@ -884,6 +895,9 @@ class AppController(QObject):
 
     def _on_live_metrics(self, payload: dict[str, object]) -> None:
         self.live_metrics_updated.emit(payload)
+        # Auto-switch check — only reads payload, no extra I/O
+        down_bps = float(payload.get("down_bps") or 0.0)
+        self._check_auto_switch(down_bps)
         # Update traffic history with process stats
         process_stats = payload.get("process_stats")
         if process_stats:
@@ -895,6 +909,132 @@ class AppController(QObject):
             if self._traffic_save_counter >= 15:  # ~30 sec at 2s interval
                 self._traffic_history.save_periodic()
                 self._traffic_save_counter = 0
+
+    # Require N consecutive high-speed readings to confirm "active download"
+    _AUTO_SWITCH_HIGH_TICKS_REQUIRED = 10  # ~10s of sustained traffic above threshold
+    # Minimum speed to count as "traffic exists" (1 KB/s) vs idle (0)
+    _AUTO_SWITCH_IDLE_BPS = 1024.0
+
+    def _check_auto_switch(self, down_bps: float) -> None:
+        """Check if speed is below threshold long enough to trigger node switch.
+
+        CRITICAL: This method MUST NOT perform any I/O — it only reads
+        in-memory state from the already-collected metrics payload.
+
+        Trigger conditions (ALL must be met):
+        1. auto_switch_enabled = True
+        2. Connected, not switching/reconnecting, 2+ nodes
+        3. There was sustained traffic (10+ consecutive ticks above threshold)
+        4. Speed dropped below threshold for delay_sec continuously
+        5. Speed is not zero (zero = idle, not speed drop)
+        6. Cooldown since last switch has elapsed
+        """
+        settings = self.state.settings
+        if not settings.auto_switch_enabled:
+            return
+        if not self.connected or self._switching or self._reconnecting:
+            return
+        if len(self.state.nodes) < 2:
+            return
+
+        now = time.monotonic()
+        threshold_bps = settings.auto_switch_threshold_kbps * 1024.0
+
+        # Speed above threshold — accumulate "active download" evidence
+        if down_bps >= threshold_bps:
+            self._auto_switch_high_ticks += 1
+            if self._auto_switch_high_ticks >= self._AUTO_SWITCH_HIGH_TICKS_REQUIRED:
+                self._auto_switch_active_download = True
+            self._auto_switch_low_since = 0.0
+            return
+
+        # Speed below threshold
+        # Not yet confirmed as active download — ignore
+        if not self._auto_switch_active_download:
+            self._auto_switch_high_ticks = 0
+            return
+
+        # Zero traffic = idle browsing, not speed drop — reset timer & high ticks
+        if down_bps < self._AUTO_SWITCH_IDLE_BPS:
+            self._auto_switch_low_since = 0.0
+            self._auto_switch_high_ticks = 0
+            self._auto_switch_active_download = False
+            return
+
+        # Speed is between IDLE and threshold — genuine speed drop
+        # Reset high ticks counter (speed is no longer high)
+        self._auto_switch_high_ticks = 0
+
+        # Start tracking low-speed moment
+        if self._auto_switch_low_since == 0.0:
+            self._auto_switch_low_since = now
+            return
+
+        # Check if speed has been low long enough
+        low_duration = now - self._auto_switch_low_since
+        if low_duration < settings.auto_switch_delay_sec:
+            return
+
+        # Check cooldown
+        if now - self._auto_switch_last_switch < settings.auto_switch_cooldown_sec:
+            return
+
+        # --- Trigger auto-switch ---
+        self._auto_switch_low_since = 0.0
+        self._auto_switch_last_switch = now
+        self._auto_switch_active_download = False
+
+        next_node = self._get_next_node_for_auto_switch()
+        if not next_node:
+            return
+
+        self._log(f"[auto-switch] speed {down_bps / 1024:.0f} KB/s < {settings.auto_switch_threshold_kbps} KB/s "
+                   f"for {low_duration:.0f}s → switching to {next_node.name}")
+        self.auto_switch_triggered.emit(next_node.name)
+
+        # Change selected node and hot-swap
+        self.state.selected_node_id = next_node.id
+        self.selection_changed.emit(next_node)
+        self.save()
+
+        if self._active_core in ("singbox", "tun2socks") and settings.tun_mode:
+            QTimer.singleShot(0, lambda: self._hot_swap_node("auto-switch: speed drop"))
+        else:
+            QTimer.singleShot(0, lambda: self._reconnect("auto-switch: speed drop"))
+
+    def _get_next_node_for_auto_switch(self) -> Node | None:
+        """Pick next node: prefer alive nodes with best speed, fall back to round-robin."""
+        current_id = self.state.selected_node_id
+        nodes = self.state.nodes
+        if not nodes:
+            return None
+
+        # Try alive nodes with speed data (excluding current)
+        candidates = [
+            n for n in nodes
+            if n.id != current_id and n.is_alive is True and n.speed_mbps is not None and n.speed_mbps > 0
+        ]
+        if candidates:
+            return max(candidates, key=lambda n: n.speed_mbps)
+
+        # Fall back to alive nodes by ping
+        candidates = [
+            n for n in nodes
+            if n.id != current_id and n.is_alive is True
+        ]
+        if candidates:
+            return min(candidates, key=lambda n: n.ping_ms if n.ping_ms is not None else float('inf'))
+
+        # Last resort: round-robin to next node
+        current_idx = 0
+        for idx, node in enumerate(nodes):
+            if node.id == current_id:
+                current_idx = idx
+                break
+        next_idx = (current_idx + 1) % len(nodes)
+        if nodes[next_idx].id == current_id:
+            return None
+        return nodes[next_idx]
 
     def _on_xray_update_worker_done(self, result: XrayCoreUpdateResult) -> None:
         self._xray_update_worker = None

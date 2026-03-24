@@ -1,7 +1,8 @@
 """Per-process proxy usage monitor via Windows API.
 
 Uses GetExtendedTcpTable to find which processes have connections
-to xray SOCKS/HTTP ports. Lightweight — no HTTP requests, < 1ms per call.
+to xray SOCKS/HTTP ports, and GetPerTcpConnectionEStats for actual
+per-connection byte counts (DataBytesIn/DataBytesOut).
 """
 from __future__ import annotations
 
@@ -9,12 +10,14 @@ import ctypes
 import ctypes.wintypes
 import os
 from dataclasses import dataclass
-from typing import Any
 
 # TCP_TABLE_OWNER_PID_CONNECTIONS = 4
 _TCP_TABLE_OWNER_PID_CONN = 4
 _AF_INET = 2
 _MIB_TCP_STATE_ESTAB = 5
+
+# TcpConnectionEstatsData = 1
+_TCP_ESTATS_DATA = 1
 
 _iphlpapi = ctypes.windll.iphlpapi  # type: ignore[attr-defined]
 _kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
@@ -33,6 +36,17 @@ class _MIB_TCPROW_OWNER_PID(ctypes.Structure):
     ]
 
 
+class _MIB_TCPROW(ctypes.Structure):
+    """Plain MIB_TCPROW (without PID) — required by GetPerTcpConnectionEStats."""
+    _fields_ = [
+        ("dwState", ctypes.wintypes.DWORD),
+        ("dwLocalAddr", ctypes.wintypes.DWORD),
+        ("dwLocalPort", ctypes.wintypes.DWORD),
+        ("dwRemoteAddr", ctypes.wintypes.DWORD),
+        ("dwRemotePort", ctypes.wintypes.DWORD),
+    ]
+
+
 class _MIB_TCPTABLE_OWNER_PID(ctypes.Structure):
     _fields_ = [
         ("dwNumEntries", ctypes.wintypes.DWORD),
@@ -40,8 +54,40 @@ class _MIB_TCPTABLE_OWNER_PID(ctypes.Structure):
     ]
 
 
+class _TCP_ESTATS_DATA_RW_v0(ctypes.Structure):
+    """BOOLEAN EnableCollection — must be c_ubyte (1 byte), not BOOL (4 bytes)."""
+    _fields_ = [("EnableCollection", ctypes.c_ubyte)]
+
+
+class _TCP_ESTATS_DATA_ROD_v0(ctypes.Structure):
+    """Per-connection byte counters. Size must be exactly 96 bytes.
+
+    Fields after SegsIn are ULONG (4 bytes), not ULONG64 (8 bytes).
+    ctypes handles alignment padding automatically.
+    """
+    _fields_ = [
+        ("DataBytesOut", ctypes.c_uint64),
+        ("DataSegsOut", ctypes.c_uint64),
+        ("DataBytesIn", ctypes.c_uint64),
+        ("DataSegsIn", ctypes.c_uint64),
+        ("SegsOut", ctypes.c_uint64),
+        ("SegsIn", ctypes.c_uint64),
+        ("SoftErrors", ctypes.c_ulong),
+        ("SoftErrorReason", ctypes.c_ulong),
+        ("SndUna", ctypes.c_ulong),
+        ("SndNxt", ctypes.c_ulong),
+        ("SndMax", ctypes.c_ulong),
+        ("ThruBytesAcked", ctypes.c_uint64),
+        ("RcvNxt", ctypes.c_ulong),
+        ("ThruBytesReceived", ctypes.c_uint64),
+    ]
+
+
 # Cache PID → exe name (PIDs don't change often)
 _pid_cache: dict[int, str] = {}
+
+# Track connections with estats already enabled — avoid redundant Set calls
+_estats_enabled: set[tuple[int, int, int, int]] = set()  # (localAddr, localPort, remoteAddr, remotePort)
 
 
 def _pid_to_exe(pid: int) -> str:
@@ -71,23 +117,69 @@ def _ntohs(port: int) -> int:
     return ((port & 0xFF) << 8) | ((port >> 8) & 0xFF)
 
 
+def _make_tcprow(row: _MIB_TCPROW_OWNER_PID) -> _MIB_TCPROW:
+    return _MIB_TCPROW(
+        dwState=row.dwState, dwLocalAddr=row.dwLocalAddr,
+        dwLocalPort=row.dwLocalPort, dwRemoteAddr=row.dwRemoteAddr,
+        dwRemotePort=row.dwRemotePort,
+    )
+
+
+def _conn_key(row: _MIB_TCPROW_OWNER_PID) -> tuple[int, int, int, int]:
+    return (row.dwLocalAddr, row.dwLocalPort, row.dwRemoteAddr, row.dwRemotePort)
+
+
+def _enable_estats(row: _MIB_TCPROW_OWNER_PID) -> bool:
+    """Enable per-connection byte tracking. Requires admin. Idempotent."""
+    key = _conn_key(row)
+    if key in _estats_enabled:
+        return True
+    tcp_row = _make_tcprow(row)
+    rw = _TCP_ESTATS_DATA_RW_v0(EnableCollection=1)
+    ret = _iphlpapi.SetPerTcpConnectionEStats(
+        ctypes.byref(tcp_row), _TCP_ESTATS_DATA,
+        ctypes.byref(rw), 0, ctypes.sizeof(rw), 0,
+    )
+    if ret == 0:
+        _estats_enabled.add(key)
+        return True
+    return False
+
+
+def _get_estats_bytes(row: _MIB_TCPROW_OWNER_PID) -> tuple[int, int]:
+    """Get (DataBytesIn, DataBytesOut) for a TCP connection."""
+    tcp_row = _make_tcprow(row)
+    rod = _TCP_ESTATS_DATA_ROD_v0()
+    ret = _iphlpapi.GetPerTcpConnectionEStats(
+        ctypes.byref(tcp_row), _TCP_ESTATS_DATA,
+        None, 0, 0,
+        None, 0, 0,
+        ctypes.byref(rod), 0, ctypes.sizeof(rod),
+    )
+    if ret == 0:
+        return rod.DataBytesIn, rod.DataBytesOut
+    return 0, 0
+
+
 @dataclass(slots=True)
 class ProxyProcessInfo:
     exe: str
     connections: int
     pids: set[int]
+    bytes_in: int = 0   # actual TCP bytes received (download)
+    bytes_out: int = 0  # actual TCP bytes sent (upload)
 
 
 def get_proxy_connections(socks_port: int = 10808, http_port: int = 8080) -> list[ProxyProcessInfo]:
-    """Find processes connected to xray proxy ports.
+    """Find processes connected to xray proxy ports with per-connection byte counts.
 
-    Returns list of ProxyProcessInfo sorted by connection count desc.
-    Fast: uses kernel API, no HTTP requests. < 1ms typical.
+    Uses GetExtendedTcpTable for connection/PID discovery and
+    GetPerTcpConnectionEStats for actual network bytes per connection.
+    Requires Administrator for byte counts; falls back to 0 without admin.
     """
     target_ports = {socks_port, http_port}
     localhost = 0x0100007F  # 127.0.0.1 in network byte order
 
-    # Get TCP table
     size = ctypes.wintypes.DWORD(0)
     _iphlpapi.GetExtendedTcpTable(None, ctypes.byref(size), False, _AF_INET, _TCP_TABLE_OWNER_PID_CONN, 0)
 
@@ -99,13 +191,11 @@ def get_proxy_connections(socks_port: int = 10808, http_port: int = 8080) -> lis
     table = ctypes.cast(buf, ctypes.POINTER(_MIB_TCPTABLE_OWNER_PID)).contents
     n = table.dwNumEntries
 
-    # Access rows via raw pointer arithmetic
     row_array = ctypes.cast(
         ctypes.byref(table.table),
         ctypes.POINTER(_MIB_TCPROW_OWNER_PID * n),
     ).contents
 
-    # Find connections to proxy ports on localhost
     by_exe: dict[str, ProxyProcessInfo] = {}
     for i in range(n):
         row = row_array[i]
@@ -122,15 +212,21 @@ def get_proxy_connections(socks_port: int = 10808, http_port: int = 8080) -> lis
         if not exe or exe.lower() in ("xray.exe", "sing-box.exe"):
             continue
 
+        _enable_estats(row)
+        bytes_in, bytes_out = _get_estats_bytes(row)
+
         if exe not in by_exe:
             by_exe[exe] = ProxyProcessInfo(exe=exe, connections=0, pids=set())
         by_exe[exe].connections += 1
         by_exe[exe].pids.add(pid)
+        by_exe[exe].bytes_in += bytes_in
+        by_exe[exe].bytes_out += bytes_out
 
     result = sorted(by_exe.values(), key=lambda p: p.connections, reverse=True)
     return result
 
 
 def clear_pid_cache() -> None:
-    """Clear PID→exe cache. Call on disconnect."""
+    """Clear PID→exe cache and estats tracking. Call on disconnect."""
     _pid_cache.clear()
+    _estats_enabled.clear()

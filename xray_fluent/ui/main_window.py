@@ -209,6 +209,7 @@ class MainWindow(FluentWindow):
         self.controller.live_metrics_updated.connect(self._on_live_metrics_updated)
         self.controller.xray_update_result.connect(self._on_xray_update_result)
         self.controller.lock_state_changed.connect(self._on_lock_state_changed)
+        self.controller.auto_switch_triggered.connect(self._on_auto_switch)
 
     def _init_window(self) -> None:
         s = self.controller.state.settings
@@ -291,6 +292,15 @@ class MainWindow(FluentWindow):
         if locked:
             self._show_status("warning", "Приложение заблокировано")
             self._ensure_unlocked(startup=False)
+
+    def _on_auto_switch(self, node_name: str) -> None:
+        InfoBar.warning(
+            "Авто-переключение",
+            f"Скорость упала. Переключение на {node_name}...",
+            position=InfoBarPosition.TOP_RIGHT,
+            duration=30000,
+            parent=self,
+        )
 
     def _show_status(self, level: str, message: str) -> None:
         level = level.lower().strip()
