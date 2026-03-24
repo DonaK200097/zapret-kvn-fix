@@ -213,14 +213,17 @@ class DashboardPage(QWidget):
         proc_layout.addWidget(StrongBodyLabel("Трафик по процессам", self._proc_traffic_card))
 
         self._proc_traffic_table = TableWidget(self._proc_traffic_card)
-        self._proc_traffic_table.setColumnCount(5)
+        self._proc_traffic_table.setColumnCount(6)
         self._proc_traffic_table.setHorizontalHeaderLabels(
-            ["Процесс", "\u2193 Загрузка", "\u2191 Выгрузка", "Соед.", "Маршрут"]
+            ["Процесс", "VPN", "Прямой", "Соед.", "Хост", "Всего"]
         )
         self._proc_traffic_table.horizontalHeader().setSectionResizeMode(
-            0, QHeaderView.ResizeMode.Stretch
+            0, QHeaderView.ResizeMode.Interactive
         )
-        for col in range(1, 5):
+        self._proc_traffic_table.horizontalHeader().setSectionResizeMode(
+            4, QHeaderView.ResizeMode.Stretch
+        )
+        for col in (1, 2, 3, 5):
             self._proc_traffic_table.horizontalHeader().setSectionResizeMode(
                 col, QHeaderView.ResizeMode.ResizeToContents
             )
@@ -405,25 +408,25 @@ class DashboardPage(QWidget):
             return
         self._proc_traffic_table.setRowCount(len(stats))
         for row, ps in enumerate(stats):
+            # Process name
             self._proc_traffic_table.setItem(row, 0, QTableWidgetItem(ps.exe))
-            self._proc_traffic_table.setItem(
-                row, 1, QTableWidgetItem(self._format_bytes(ps.download))
-            )
-            self._proc_traffic_table.setItem(
-                row, 2, QTableWidgetItem(self._format_bytes(ps.upload))
-            )
-            self._proc_traffic_table.setItem(
-                row, 3, QTableWidgetItem(str(ps.connections))
-            )
-            route_text = (
-                "VPN"
-                if ps.route == "proxy"
-                else ("Прямой" if ps.route == "direct" else "Смешан.")
-            )
-            item = QTableWidgetItem(route_text)
-            if ps.route == "proxy":
-                item.setForeground(QColor("#2ecc71"))
-            self._proc_traffic_table.setItem(row, 4, item)
+            # VPN traffic (green)
+            vpn_item = QTableWidgetItem(self._format_bytes(ps.proxy_bytes))
+            if ps.proxy_bytes > 0:
+                vpn_item.setForeground(QColor("#2ecc71"))
+            self._proc_traffic_table.setItem(row, 1, vpn_item)
+            # Direct traffic
+            self._proc_traffic_table.setItem(row, 2, QTableWidgetItem(self._format_bytes(ps.direct_bytes)))
+            # Connections
+            self._proc_traffic_table.setItem(row, 3, QTableWidgetItem(str(ps.connections)))
+            # Top host
+            host = ps.top_host
+            if len(host) > 30:
+                host = host[:27] + "..."
+            self._proc_traffic_table.setItem(row, 4, QTableWidgetItem(host))
+            # Total
+            total = ps.upload + ps.download
+            self._proc_traffic_table.setItem(row, 5, QTableWidgetItem(self._format_bytes(total)))
 
     @staticmethod
     def _format_bytes(b: int) -> str:

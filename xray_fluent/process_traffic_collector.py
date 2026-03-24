@@ -19,6 +19,9 @@ class ProcessTrafficSnapshot:
     download: int       # bytes total (cumulative)
     connections: int    # active connection count
     route: str          # "proxy" | "direct" | "mixed"
+    proxy_bytes: int = 0   # bytes through proxy
+    direct_bytes: int = 0  # bytes through direct
+    top_host: str = ""     # most traffic host/domain
 
 
 def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[ProcessTrafficSnapshot]:
@@ -44,28 +47,47 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
         process_path = meta.get("processPath") or ""
         exe = os.path.basename(process_path).lower() if process_path else "unknown"
 
-        # Skip hidden processes
         if exe in _HIDDEN_PROCESSES:
             continue
 
         if exe not in by_proc:
-            by_proc[exe] = {"upload": 0, "download": 0, "conns": 0, "routes": set()}
+            by_proc[exe] = {
+                "upload": 0, "download": 0, "conns": 0, "routes": set(),
+                "proxy_bytes": 0, "direct_bytes": 0, "hosts": {},
+                "display_exe": exe,
+            }
 
         entry = by_proc[exe]
-        entry["upload"] += conn.get("upload", 0)
-        entry["download"] += conn.get("download", 0)
+        conn_up = conn.get("upload", 0)
+        conn_down = conn.get("download", 0)
+        conn_total = conn_up + conn_down
+        entry["upload"] += conn_up
+        entry["download"] += conn_down
         entry["conns"] += 1
 
-        # Determine route from chains
+        # Route + per-route bytes
         chains = conn.get("chains") or []
+        is_proxy = False
         if chains:
             chain = chains[0].lower()
             if "proxy" in chain:
                 entry["routes"].add("proxy")
-            elif "direct" in chain:
-                entry["routes"].add("direct")
+                entry["proxy_bytes"] += conn_total
+                is_proxy = True
             else:
-                entry["routes"].add(chain)
+                entry["routes"].add("direct")
+                entry["direct_bytes"] += conn_total
+
+        # Track hosts (domain or IP)
+        host = meta.get("host") or meta.get("destinationIP") or ""
+        if host:
+            entry["hosts"][host] = entry["hosts"].get(host, 0) + conn_total
+
+        # Original case display name
+        if entry["display_exe"] == exe:
+            pp = meta.get("processPath") or ""
+            if pp:
+                entry["display_exe"] = os.path.basename(pp)
 
     # Build snapshots
     result: list[ProcessTrafficSnapshot] = []
@@ -78,21 +100,20 @@ def collect_process_stats(clash_api_port: int = SINGBOX_CLASH_API_PORT) -> list[
         else:
             route = "direct"
 
-        # Use original case for display - find first match
-        display_exe = exe  # lowercase fallback
-        for conn in connections:
-            meta = conn.get("metadata") or {}
-            pp = meta.get("processPath") or ""
-            if os.path.basename(pp).lower() == exe:
-                display_exe = os.path.basename(pp)
-                break
+        # Top host by traffic
+        top_host = ""
+        if stats["hosts"]:
+            top_host = max(stats["hosts"], key=stats["hosts"].get)
 
         result.append(ProcessTrafficSnapshot(
-            exe=display_exe,
+            exe=stats["display_exe"],
             upload=stats["upload"],
             download=stats["download"],
             connections=stats["conns"],
             route=route,
+            proxy_bytes=stats["proxy_bytes"],
+            direct_bytes=stats["direct_bytes"],
+            top_host=top_host,
         ))
 
     # Sort by total traffic descending
