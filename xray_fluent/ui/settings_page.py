@@ -257,18 +257,12 @@ class SettingsPage(QWidget):
         # ============================================================
         startup_group = SettingCardGroup("Запуск", container)
 
-        self.start_min_card = SwitchSettingCard(
-            FIF.MINIMIZE, "Запуск в свёрнутом виде",
-            "Запускать приложение свёрнутым в системный трей",
-            parent=startup_group,
-        )
         self.launch_card = SwitchSettingCard(
             FIF.POWER_BUTTON, "Запуск при старте Windows",
-            "Автоматически запускать приложение при входе в систему",
+            "Автоматически запускать приложение в трее при входе в систему",
             parent=startup_group,
         )
 
-        startup_group.addSettingCard(self.start_min_card)
         startup_group.addSettingCard(self.launch_card)
         root.addWidget(startup_group)
 
@@ -381,7 +375,6 @@ class SettingsPage(QWidget):
         self.singbox_path_card.edit.editingFinished.connect(self._auto_save)
         self.tun_engine_card.combo.currentIndexChanged.connect(self._auto_save)
 
-        self.start_min_card.checkedChanged.connect(self._auto_save)
         self.launch_card.checkedChanged.connect(self._auto_save)
         self.reconnect_card.checkedChanged.connect(self._auto_save)
         self.check_updates_card.checkedChanged.connect(self._auto_save)
@@ -425,7 +418,6 @@ class SettingsPage(QWidget):
             )
         )
         self._select_combo_data(self.tun_engine_card.combo, settings.tun_engine)
-        self.start_min_card.setChecked(settings.start_minimized)
         self.launch_card.setChecked(settings.launch_on_startup)
         self.reconnect_card.setChecked(settings.reconnect_on_network_change)
         self.check_updates_card.setChecked(settings.check_updates)
@@ -517,7 +509,7 @@ class SettingsPage(QWidget):
         self.xray_path_card.edit.setText(data.xray_path)
         self.singbox_path_card.edit.setText(data.singbox_path)
         data.tun_engine = self.tun_engine_card.combo.currentData() or "singbox"
-        data.start_minimized = self.start_min_card.isChecked()
+        data.start_minimized = False
         data.launch_on_startup = self.launch_card.isChecked()
         data.reconnect_on_network_change = self.reconnect_card.isChecked()
         data.check_updates = self.check_updates_card.isChecked()

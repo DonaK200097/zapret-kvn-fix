@@ -26,10 +26,10 @@ def set_startup_enabled(app_name: str, enabled: bool, command: str) -> None:
 def build_startup_command() -> str:
     if getattr(sys, "frozen", False):
         exe = Path(sys.executable).resolve()
-        return f'"{exe}" --minimized'
+        return f'"{exe}" --tray'
 
     base_dir = Path(__file__).resolve().parents[1]
     script = base_dir / "main.py"
     venv_pythonw = base_dir / ".venv" / "Scripts" / "pythonw.exe"
     python_exe = venv_pythonw if venv_pythonw.exists() else Path(sys.executable).resolve()
-    return f'"{python_exe}" "{script}" --minimized'
+    return f'"{python_exe}" "{script}" --tray'

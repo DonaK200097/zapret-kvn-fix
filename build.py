@@ -23,7 +23,6 @@ VENV_PYTHON = VENV_DIR / "Scripts" / "python.exe"
 VENV_PIP = VENV_DIR / "Scripts" / "pip.exe"
 
 APP_NAME = "ZapretKVN"
-DEBUG_LAUNCHER_NAME = "Run ZapretKVN Debug.bat"
 
 DIST_DIR = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
@@ -56,27 +55,6 @@ def _copy_tree_merge(src: Path, dst: Path) -> None:
                 shutil.copy2(str(item), str(target))
             except PermissionError:
                 _print(f"  skipped (locked): {target.name}")
-
-
-def write_debug_launcher() -> None:
-    launcher_path = APP_DIR / DEBUG_LAUNCHER_NAME
-    launcher_path.write_text(
-        "@echo off\r\n"
-        "setlocal\r\n"
-        "set XRAY_FLUENT_SHOW_CONSOLE=1\r\n"
-        "echo Launching zapret kvn in debug mode...\r\n"
-        "echo Startup log: %~dp0data\\logs\\startup.log\r\n"
-        "echo.\r\n"
-        '"%~dp0ZapretKVN.exe" --show-console\r\n'
-        "set EXIT_CODE=%ERRORLEVEL%\r\n"
-        "echo.\r\n"
-        "echo Exit code: %EXIT_CODE%\r\n"
-        "echo Startup log: %~dp0data\\logs\\startup.log\r\n"
-        "pause\r\n"
-        "endlocal\r\n",
-        encoding="ascii",
-    )
-    _print(f"Wrote debug launcher: {launcher_path}")
 
 
 # ------------------------------------------------------------------
@@ -169,8 +147,6 @@ def build_exe() -> None:
     if ZAPRET_DIR.is_dir():
         _print(f"Merging zapret -> {dst_zapret}")
         _copy_tree_merge(ZAPRET_DIR, dst_zapret)
-
-    write_debug_launcher()
 
     _print(f"Build complete: {APP_DIR / (APP_NAME + '.exe')}")
 

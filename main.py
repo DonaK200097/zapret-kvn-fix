@@ -5,7 +5,6 @@ import atexit
 import faulthandler
 import logging
 from logging.handlers import RotatingFileHandler
-import os
 from pathlib import Path
 import sys
 import threading
@@ -14,8 +13,6 @@ from xray_fluent.subprocess_utils import result_output_text, run_text
 
 
 STARTUP_LOG_NAME = "startup.log"
-SHOW_CONSOLE_ARG = "--show-console"
-SHOW_CONSOLE_ENV = "XRAY_FLUENT_SHOW_CONSOLE"
 
 
 class _TeeStream:
@@ -60,12 +57,6 @@ STARTUP_LOG_DIR = BASE_DIR / "data" / "logs"
 STARTUP_LOG_PATH = STARTUP_LOG_DIR / STARTUP_LOG_NAME
 _bootstrap_logger = logging.getLogger("xray_fluent.bootstrap")
 _bootstrap_stream = None
-
-
-def _show_console_requested() -> bool:
-    if SHOW_CONSOLE_ARG in sys.argv[1:]:
-        return True
-    return os.environ.get(SHOW_CONSOLE_ENV, "").strip() == "1"
 
 
 def _setup_bootstrap_logging() -> None:
@@ -194,31 +185,12 @@ def _disable_system_proxy_on_exit() -> None:
         pass
 
 
-def _load_saved_start_hidden() -> bool:
-    try:
-        from xray_fluent.storage import PassphraseRequired, StateStorage
-    except Exception:
-        _bootstrap_logger.exception("Failed to import state storage for startup preflight")
-        return False
-
-    try:
-        return bool(StateStorage().load().settings.start_minimized)
-    except PassphraseRequired:
-        _bootstrap_logger.info("State is passphrase-protected; start_minimized preflight skipped")
-    except Exception:
-        _bootstrap_logger.exception("Failed to pre-read start_minimized from state")
-    return False
-
-
 def _log_process_exit() -> None:
     _bootstrap_logger.info("----- process exit -----")
 
 
 def _hide_console_if_needed() -> None:
     if sys.platform != "win32" or not getattr(sys, "frozen", False):
-        return
-    if _show_console_requested():
-        _bootstrap_logger.info("Console kept visible for debugging")
         return
     try:
         import ctypes
@@ -247,11 +219,11 @@ def main() -> int:
     _hide_console_if_needed()
 
     parser = argparse.ArgumentParser(description="zapret kvn")
-    parser.add_argument("--minimized", action="store_true", help="start in tray")
-    parser.add_argument(SHOW_CONSOLE_ARG, action="store_true", help="keep console window visible for debugging")
+    parser.add_argument("--tray", action="store_true", help="start in tray")
+    parser.add_argument("--minimized", action="store_true", dest="tray", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
-    _bootstrap_logger.info("parsed arguments: minimized=%s show_console=%s", args.minimized, args.show_console)
+    _bootstrap_logger.info("parsed arguments: tray=%s", args.tray)
     _bootstrap_logger.info("Importing Qt and application modules")
 
     import qfluentwidgets  # noqa: F401
@@ -270,9 +242,9 @@ def main() -> int:
     tray_available = QSystemTrayIcon.isSystemTrayAvailable()
     app.setQuitOnLastWindowClosed(not tray_available)
 
-    start_hidden = args.minimized or (_load_saved_start_hidden() and not args.show_console)
+    start_hidden = args.tray
     if start_hidden and not tray_available:
-        _bootstrap_logger.warning("System tray unavailable; disabling minimized startup")
+        _bootstrap_logger.warning("System tray unavailable; disabling tray startup")
         start_hidden = False
     _bootstrap_logger.info("system tray available=%s start_hidden=%s", tray_available, start_hidden)
 
@@ -305,7 +277,7 @@ def main() -> int:
     _bootstrap_logger.info("main window created: mica_enabled=%s", mica_enabled)
 
     if start_hidden:
-        _bootstrap_logger.info("Starting minimized to tray")
+        _bootstrap_logger.info("Starting in tray")
         window.hide()
     elif splash is None:
         _bootstrap_logger.info("Showing main window")
