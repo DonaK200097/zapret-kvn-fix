@@ -16,7 +16,7 @@ from qfluentwidgets import (
 
 from ..app_controller import AppController
 from ..storage import PassphraseRequired
-from ..constants import APP_NAME, APP_VERSION
+from ..constants import APP_NAME, APP_VERSION, LOG_DIR
 from ..models import AppSettings, Node, RoutingSettings
 from ..app_updater import AppUpdate, UpdateChecker, UpdateDownloader
 from ..xray_core_updater import XrayCoreUpdateResult
@@ -90,6 +90,8 @@ class MainWindow(FluentWindow):
         if loaded and unlocked:
             self.history_page.set_storage(self.controller.traffic_history)
             self.controller.auto_connect_if_needed()
+
+        self._consume_update_error_log()
 
         # Set Xray version on updates page
         from ..xray_manager import get_xray_version
@@ -217,6 +219,7 @@ class MainWindow(FluentWindow):
         self.controller.nodes_changed.connect(self._on_nodes_changed)
         self.controller.selection_changed.connect(self._on_selection_changed)
         self.controller.connection_changed.connect(self._on_connection_changed)
+        self.controller.connection_status_changed.connect(self.dashboard_page.set_runtime_status)
         self.controller.routing_changed.connect(self._on_routing_changed)
         self.controller.settings_changed.connect(self._on_settings_changed)
         self.controller.log_line.connect(self.logs_page.append_line)
@@ -575,7 +578,7 @@ class MainWindow(FluentWindow):
             port = self.controller.state.settings.http_port or DEFAULT_HTTP_PORT
             proxy_url = f"http://{PROXY_HOST}:{port}"
 
-        restart_in_tray = "--tray" in QApplication.arguments()
+        restart_in_tray = self._tray_available and not self.isVisible()
 
         self._update_downloader = UpdateDownloader(
             update,
@@ -592,13 +595,46 @@ class MainWindow(FluentWindow):
     def _on_update_ready(self) -> None:
         self.updates_page.set_app_status("Обновление загружено. Перезапуск...")
         self._show_status("success", "Обновление загружено. Перезапуск...")
-        QTimer.singleShot(1500, lambda: QApplication.quit())
+        QTimer.singleShot(1500, self._quit_for_update)
 
     def _on_update_error(self, err: str) -> None:
         self._update_in_progress = False
         self.updates_page.show_idle()
         self.updates_page.set_app_error(f"Ошибка: {err}")
         self._show_status("error", err)
+
+    def _quit_for_update(self) -> None:
+        self._quitting = True
+        self._save_geometry()
+        self.controller.shutdown()
+        app = QApplication.instance()
+        if app is not None:
+            app.quit()
+
+    def _consume_update_error_log(self) -> None:
+        error_log = LOG_DIR / "update_error.log"
+        if not error_log.exists():
+            return
+        archived_log = LOG_DIR / "update_error.last.log"
+        try:
+            content = error_log.read_text(encoding="utf-8").strip()
+        except Exception:
+            content = ""
+        try:
+            if archived_log.exists():
+                archived_log.unlink()
+            error_log.replace(archived_log)
+        except Exception:
+            pass
+
+        message = "Предыдущее обновление не завершилось. См. data/logs/update_error.last.log"
+        if content:
+            self.logs_page.append_line("[update] previous install failed")
+            for line in content.splitlines()[:10]:
+                if line.strip():
+                    self.logs_page.append_line(f"[update] {line.strip()}")
+        self.updates_page.set_app_error(message)
+        QTimer.singleShot(0, lambda: self._show_status("error", message))
 
     def _check_xray_updates(self) -> None:
         self.updates_page.set_xray_status("Проверка обновлений Xray...")

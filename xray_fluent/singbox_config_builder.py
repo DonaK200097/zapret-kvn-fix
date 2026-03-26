@@ -6,9 +6,13 @@ import socket
 import string
 from copy import deepcopy
 from dataclasses import dataclass
-from ipaddress import ip_network
+from ipaddress import IPv4Address, ip_address, ip_network
 from pathlib import Path
 from typing import Any
+
+import logging
+
+_log = logging.getLogger(__name__)
 
 from .constants import (
     PROXY_HOST,
@@ -506,11 +510,15 @@ def _build_route_rules(routing: RoutingSettings, node: Node, settings: AppSettin
     # Protected processes bypass TUN
     _append_protected_process_rules(rules, settings)
 
-    bypass_ips: list[str] = []
+    # Bypass proxy server endpoint to prevent routing loop
     if node.server:
-        bypass_ips.append(f"{node.server}/32")
-    if bypass_ips:
-        rules.append({"ip_cidr": bypass_ips, "outbound": "direct"})
+        try:
+            addr = ip_address(node.server)
+            prefix = 32 if isinstance(addr, IPv4Address) else 128
+            rules.append({"ip_cidr": [f"{node.server}/{prefix}"], "outbound": "direct"})
+        except ValueError:
+            # node.server is FQDN — use domain match instead of ip_cidr
+            rules.append({"domain": [node.server], "outbound": "direct"})
 
     if routing.bypass_lan:
         rules.append({"ip_is_private": True, "outbound": "direct"})
@@ -582,6 +590,7 @@ def _append_singbox_rules(
         elif value.startswith("keyword:"):
             domain_keyword.append(value[len("keyword:"):])
         elif value.startswith("geosite:") or value.startswith("geoip:"):
+            _log.warning("Rule '%s' skipped: geosite/geoip removed in sing-box >= 1.12", value)
             continue
         else:
             try:

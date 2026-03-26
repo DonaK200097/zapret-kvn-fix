@@ -260,21 +260,31 @@ class UpdateDownloader(QThread):
     ) -> None:
         """Download one segment with Range header."""
         opener = self._build_opener(proxy_url)
+        expected_length = end - start + 1
         req = Request(url, headers={
             "User-Agent": USER_AGENT,
             "Range": f"bytes={start}-{end}",
         })
         with opener.open(req, timeout=_DOWNLOAD_TIMEOUT) as resp:
+            status_code = getattr(resp, "status", None)
+            content_range = resp.headers.get("Content-Range", "")
+            if status_code != 206 or not content_range.startswith(f"bytes {start}-{end}/"):
+                raise RuntimeError("Сервер некорректно ответил на Range-запрос")
+
+            downloaded = 0
             with open(seg_path, "wb") as f:
                 while True:
                     chunk = resp.read(_CHUNK_SIZE)
                     if not chunk:
                         break
                     f.write(chunk)
+                    downloaded += len(chunk)
                     with lock:
                         progress_arr[seg_index] += len(chunk)
                         done = sum(progress_arr)
                         self.progress.emit(int(done * 100 / total))
+            if downloaded != expected_length:
+                raise RuntimeError("Сервер вернул неполный фрагмент архива")
 
     def _download_single(self, url: str, opener: urllib.request.OpenerDirector, zip_path: Path) -> None:
         """Single-connection fallback download."""
@@ -351,6 +361,12 @@ class UpdateDownloader(QThread):
                 for sp in seg_paths:
                     with open(sp, "rb") as seg_f:
                         shutil.copyfileobj(seg_f, out)
+        except Exception as exc:
+            _log.warning("Segmented download failed, falling back to single download: %s", exc)
+            if zip_path.exists():
+                zip_path.unlink()
+            self.progress.emit(0)
+            self._download_single(url, opener, zip_path)
         finally:
             # Clean up segment temp files
             shutil.rmtree(seg_dir, ignore_errors=True)
@@ -492,6 +508,11 @@ class UpdateDownloader(QThread):
                 "    Get-ChildItem -LiteralPath $backupStaleDir -Force -ErrorAction SilentlyContinue | ForEach-Object {",
                 "        Move-Item -LiteralPath $_.FullName -Destination $appDir -Force",
                 "    }",
+                (
+                    "    if (Test-Path -LiteralPath $exePath) { Start-Process -FilePath $exePath -ArgumentList '--tray' -WorkingDirectory $appDir -ErrorAction SilentlyContinue | Out-Null }"
+                    if self._restart_in_tray
+                    else "    if (Test-Path -LiteralPath $exePath) { Start-Process -FilePath $exePath -WorkingDirectory $appDir -ErrorAction SilentlyContinue | Out-Null }"
+                ),
                 "    New-Item -ItemType Directory -Path $logDir -Force | Out-Null",
                 "    ($_ | Out-String) | Set-Content -LiteralPath $errorLog -Encoding UTF8",
                 "    Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue",

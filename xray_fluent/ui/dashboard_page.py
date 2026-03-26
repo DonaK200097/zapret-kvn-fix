@@ -75,6 +75,8 @@ class DashboardPage(QWidget):
         self._node_ids: list[str] = []
         self._selected_node: Node | None = None
         self._connected = False
+        self._connection_phase = "idle"
+        self._connection_message = "Прокси остановлен"
         self._mode = "rule"
         self._settings = AppSettings()
         self._routing = RoutingSettings()
@@ -418,6 +420,20 @@ class DashboardPage(QWidget):
             self.traffic_graph.clear_data()
             self._proc_traffic_table.setRowCount(0)
             self._last_process_stats = None
+            if self._connection_phase == "running":
+                self._connection_phase = "idle"
+                self._connection_message = self._default_connection_message()
+        elif self._connection_phase == "idle":
+            self._connection_phase = "running"
+            self._connection_message = self._default_connection_message()
+        self._refresh_dashboard()
+
+    def set_runtime_status(self, phase: str, message: str) -> None:
+        normalized = (phase or "idle").strip().lower()
+        if normalized not in {"idle", "starting", "running", "error"}:
+            normalized = "idle"
+        self._connection_phase = normalized
+        self._connection_message = (message or "").strip() or self._default_connection_message()
         self._refresh_dashboard()
 
     def set_mode(self, mode: str) -> None:
@@ -435,14 +451,20 @@ class DashboardPage(QWidget):
         self._settings.socks_port = socks_port
         self._settings.http_port = http_port
         self._settings.tun_mode = False
+        if self._connection_phase in {"idle", "running"}:
+            self._connection_message = self._default_connection_message()
         self._refresh_dashboard()
 
     def set_tun_mode(self, enabled: bool) -> None:
         self._settings.tun_mode = enabled
+        if self._connection_phase in {"idle", "running"}:
+            self._connection_message = self._default_connection_message()
         self._refresh_dashboard()
 
     def set_settings_snapshot(self, settings: AppSettings) -> None:
         self._settings = settings
+        if self._connection_phase in {"idle", "running"}:
+            self._connection_message = self._default_connection_message()
         self._sync_switches()
         self._refresh_dashboard()
 
@@ -523,15 +545,15 @@ class DashboardPage(QWidget):
         self._refresh_traffic_card()
         self._refresh_routing_card()
         has_profiles = bool(self._nodes)
-        self.toggle_btn.setEnabled(has_profiles)
+        self.toggle_btn.setEnabled(has_profiles and self._connection_phase != "starting")
         if self._stack.currentIndex() == 1:
             self._refresh_detail_stats()
 
     def _refresh_connection_card(self) -> None:
-        action = "VPN" if self._settings.tun_mode else "Прокси"
-        self.connection_state_label.setText("Подключено" if self._connected else "Ожидание")
+        state_title, status_text = self._connection_texts()
+        self.connection_state_label.setText(state_title)
         self.connection_engine_label.setText(self._route_engine_label())
-        self.connection_status_label.setText(f"{action} {'работает' if self._connected else 'остановлен'}")
+        self.connection_status_label.setText(status_text)
         self.connection_target_label.setText(self._selected_node_summary())
         self.toggle_btn.setText(self._toggle_action_text())
         self.toggle_btn.setIcon(FIF.PAUSE_BOLD if self._connected else FIF.PLAY_SOLID)
@@ -642,6 +664,19 @@ class DashboardPage(QWidget):
             return f"Системный прокси  HTTP {self._settings.http_port} / SOCKS {self._settings.socks_port}"
         return f"Локальный прокси  HTTP {self._settings.http_port} / SOCKS {self._settings.socks_port}"
 
+    def _default_connection_message(self) -> str:
+        action = "VPN" if self._settings.tun_mode else "Прокси"
+        return f"{action} {'работает' if self._connected else 'остановлен'}"
+
+    def _connection_texts(self) -> tuple[str, str]:
+        if self._connection_phase == "starting":
+            return "Запуск", self._connection_message
+        if self._connection_phase == "error":
+            return "Ошибка", self._connection_message
+        if self._connection_phase == "running" or self._connected:
+            return "Подключено", self._connection_message or self._default_connection_message()
+        return "Ожидание", self._connection_message or self._default_connection_message()
+
     def _toggle_action_text(self) -> str:
         if self._settings.tun_mode:
             return "Остановить VPN" if self._connected else "Запустить VPN"
@@ -657,6 +692,8 @@ class DashboardPage(QWidget):
         return f"{group}  {scheme}  {server}:{port}"
 
     def _summary_text(self) -> str:
+        if self._connection_phase in {"starting", "error"}:
+            return self._connection_message
         if self._selected_node is None:
             return "Выберите узел, чтобы запустить прокси или VPN и просмотреть состояние сеанса."
         if self._connected:
