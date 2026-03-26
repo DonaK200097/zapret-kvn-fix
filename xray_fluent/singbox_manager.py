@@ -145,7 +145,7 @@ class SingBoxManager(QObject):
         return True
 
     @staticmethod
-    def _wait_tun_released(max_wait: float = 5.0) -> None:
+    def _wait_tun_released(max_wait: float = 10.0) -> None:
         """Poll until the TUN adapter is gone, up to max_wait seconds."""
         if os.name != "nt":
             return

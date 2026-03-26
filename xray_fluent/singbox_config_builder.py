@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import ntpath
-import os
 import secrets
 import socket
 import string
@@ -50,6 +49,12 @@ def _find_free_port(start: int = SS_PROTECT_PORT_START, end: int = SS_PROTECT_PO
 def _generate_ss_password(length: int = 24) -> str:
     alphabet = string.ascii_letters + string.digits
     return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+
+def _generate_tun_interface_name() -> str:
+    # Keep the xftun prefix so cleanup/release detection still works, but avoid
+    # a stable name that can collide with a not-yet-released previous adapter.
+    return f"xftun{secrets.token_hex(3)}"
 
 
 def _resolve_tun_final_outbound(routing: RoutingSettings) -> str:
@@ -207,7 +212,7 @@ def _build_hybrid_singbox_config(
             {
                 "type": "tun",
                 "tag": "tun-in",
-                "interface_name": f"xftun{os.getpid() % 10000}",
+                "interface_name": _generate_tun_interface_name(),
                 "address": ["172.19.0.1/30"],
                 "auto_route": True,
                 "strict_route": False,
@@ -353,7 +358,7 @@ def _build_native_config(
             {
                 "type": "tun",
                 "tag": "tun-in",
-                "interface_name": f"xftun{os.getpid() % 10000}",
+                "interface_name": _generate_tun_interface_name(),
                 "address": ["172.19.0.1/30"],
                 "auto_route": True,
                 "strict_route": False,

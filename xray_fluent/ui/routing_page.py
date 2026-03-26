@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -22,6 +22,7 @@ from qfluentwidgets import (
     ComboBox,
     FluentIcon as FIF,
     PrimaryToolButton,
+    PrimaryPushButton,
     SettingCard,
     SettingCardGroup,
     SmoothScrollArea,
@@ -104,12 +105,7 @@ class RoutingPage(QWidget):
         super().__init__(parent)
         self.setObjectName("routing")
         self._loading = False
-
-        # Debounce timer for auto-apply
-        self._apply_timer = QTimer(self)
-        self._apply_timer.setSingleShot(True)
-        self._apply_timer.setInterval(300)
-        self._apply_timer.timeout.connect(self._emit_apply)
+        self._apply_pending = False
 
         # --- Outer layout with scroll area ---
         outer = QVBoxLayout(self)
@@ -130,6 +126,16 @@ class RoutingPage(QWidget):
         root.setSpacing(12)
 
         root.addWidget(SubtitleLabel("Маршрутизация", container))
+
+        apply_row = QHBoxLayout()
+        self._apply_pending_label = CaptionLabel("Есть неприменённые изменения маршрутизации", container)
+        self._apply_pending_label.setVisible(False)
+        apply_row.addWidget(self._apply_pending_label)
+        apply_row.addStretch(1)
+        self.apply_routing_btn = PrimaryPushButton("Применить", container)
+        self.apply_routing_btn.setEnabled(False)
+        apply_row.addWidget(self.apply_routing_btn)
+        root.addLayout(apply_row)
 
         # --- Header: mode, DNS, bypass LAN ---
         header = QGridLayout()
@@ -356,13 +362,14 @@ class RoutingPage(QWidget):
         self.add_proc_btn.clicked.connect(self._on_browse_exe)
         self.add_proc_folder_btn.clicked.connect(self._on_browse_process_folder)
         self.del_proc_btn.clicked.connect(self._on_del_procs)
+        self.apply_routing_btn.clicked.connect(self._emit_apply)
         self.rules_table.cellChanged.connect(self._schedule_apply)
 
     # --- Auto-apply ---
 
     def _schedule_apply(self) -> None:
         if not self._loading:
-            self._apply_timer.start()
+            self._set_apply_pending(True)
 
     # --- Public API ---
 
@@ -432,6 +439,7 @@ class RoutingPage(QWidget):
         self.proc_table.setUpdatesEnabled(True)
 
         self._loading = False
+        self._set_apply_pending(False)
 
         # First launch: save defaults immediately
         if use_defaults or use_proc_defaults:
@@ -716,9 +724,15 @@ class RoutingPage(QWidget):
             service_routes=service_routes,
             tun_default_outbound=str(tun_default_outbound),
         )
+        self._set_apply_pending(False)
         self.apply_requested.emit(routing)
 
     # --- Helpers ---
+
+    def _set_apply_pending(self, pending: bool) -> None:
+        self._apply_pending = pending
+        self._apply_pending_label.setVisible(pending)
+        self.apply_routing_btn.setEnabled(pending)
 
     @staticmethod
     def _select_combo_value(combo: ComboBox, value: str) -> None:
