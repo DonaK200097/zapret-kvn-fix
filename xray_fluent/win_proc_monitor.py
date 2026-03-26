@@ -146,8 +146,11 @@ def _enable_estats(row: _MIB_TCPROW_OWNER_PID) -> bool:
     return False
 
 
-def _get_estats_bytes(row: _MIB_TCPROW_OWNER_PID) -> tuple[int, int]:
-    """Get (DataBytesIn, DataBytesOut) for a TCP connection."""
+def _get_estats_bytes(row: _MIB_TCPROW_OWNER_PID) -> tuple[int, int] | None:
+    """Get (DataBytesIn, DataBytesOut) for a TCP connection.
+
+    Returns None if the API call fails (connection closed, access denied, etc.).
+    """
     tcp_row = _make_tcprow(row)
     rod = _TCP_ESTATS_DATA_ROD_v0()
     ret = _iphlpapi.GetPerTcpConnectionEStats(
@@ -158,7 +161,7 @@ def _get_estats_bytes(row: _MIB_TCPROW_OWNER_PID) -> tuple[int, int]:
     )
     if ret == 0:
         return rod.DataBytesIn, rod.DataBytesOut
-    return 0, 0
+    return None
 
 
 @dataclass(slots=True)
@@ -170,7 +173,7 @@ class ProxyProcessInfo:
     bytes_out: int = 0  # actual TCP bytes sent (upload)
 
 
-def get_proxy_connections(socks_port: int = 10808, http_port: int = 8080) -> list[ProxyProcessInfo]:
+def get_proxy_connections(socks_port: int = 10808, http_port: int = 10809) -> list[ProxyProcessInfo]:
     """Find processes connected to xray proxy ports with per-connection byte counts.
 
     Uses GetExtendedTcpTable for connection/PID discovery and
@@ -213,14 +216,15 @@ def get_proxy_connections(socks_port: int = 10808, http_port: int = 8080) -> lis
             continue
 
         _enable_estats(row)
-        bytes_in, bytes_out = _get_estats_bytes(row)
+        estats = _get_estats_bytes(row)
 
         if exe not in by_exe:
             by_exe[exe] = ProxyProcessInfo(exe=exe, connections=0, pids=set())
         by_exe[exe].connections += 1
         by_exe[exe].pids.add(pid)
-        by_exe[exe].bytes_in += bytes_in
-        by_exe[exe].bytes_out += bytes_out
+        if estats is not None:
+            by_exe[exe].bytes_in += estats[0]
+            by_exe[exe].bytes_out += estats[1]
 
     result = sorted(by_exe.values(), key=lambda p: p.connections, reverse=True)
     return result

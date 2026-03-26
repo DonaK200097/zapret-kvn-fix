@@ -15,13 +15,15 @@ import logging
 _log = logging.getLogger(__name__)
 
 from .constants import (
+    DEFAULT_HTTP_PORT,
+    DEFAULT_SOCKS_PORT,
     PROXY_HOST,
     ROUTING_DIRECT,
     ROUTING_GLOBAL,
     SINGBOX_CLASH_API_PORT,
     SS_PROTECT_PORT_START,
     SS_PROTECT_PORT_END,
-    XRAY_STATS_API_PORT,
+    DEFAULT_XRAY_STATS_API_PORT,
 )
 from .models import AppSettings, Node, RoutingSettings
 from .process_presets import PROCESS_PRESETS_BY_ID
@@ -75,18 +77,20 @@ def build_singbox_config(
     settings: AppSettings,
     protect_port: int = 0,
     protect_password: str = "",
+    api_port: int = 0,
 ) -> TunConfigBundle:
     if needs_xray_hybrid(node):
-        return _build_hybrid_config(node, routing, settings, protect_port, protect_password)
+        return _build_hybrid_config(node, routing, settings, protect_port, protect_password, api_port)
     return _build_native_config(node, routing, settings)
 
 
 def build_xray_hybrid_config(
     node: Node, routing: RoutingSettings, settings: AppSettings,
     protect_port: int, protect_password: str,
+    api_port: int = 0,
 ) -> dict[str, Any]:
     """Public wrapper for hot-swap: rebuild only xray config with existing protect params."""
-    return _build_xray_hybrid_config(node, routing, settings, protect_port, protect_password)
+    return _build_xray_hybrid_config(node, routing, settings, protect_port, protect_password, api_port)
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +123,7 @@ def _build_hybrid_config(
     settings: AppSettings,
     protect_port: int = 0,
     protect_password: str = "",
+    api_port: int = 0,
 ) -> TunConfigBundle:
     if not protect_port:
         protect_port = _find_free_port()
@@ -126,7 +131,7 @@ def _build_hybrid_config(
         protect_password = _generate_ss_password()
 
     singbox_cfg = _build_hybrid_singbox_config(node, routing, settings, protect_port, protect_password)
-    xray_cfg = _build_xray_hybrid_config(node, routing, settings, protect_port, protect_password)
+    xray_cfg = _build_xray_hybrid_config(node, routing, settings, protect_port, protect_password, api_port)
 
     return TunConfigBundle(
         singbox_config=singbox_cfg,
@@ -236,14 +241,17 @@ def _build_hybrid_singbox_config(
 def _build_xray_hybrid_config(
     node: Node, routing: RoutingSettings, settings: AppSettings,
     protect_port: int, protect_password: str,
+    api_port: int = 0,
 ) -> dict[str, Any]:
     """Build xray config for hybrid mode: SOCKS inbound + dialerProxy to SS protect."""
+    if not api_port:
+        api_port = DEFAULT_XRAY_STATS_API_PORT
     from .config_builder import build_xray_config
-    cfg = build_xray_config(node, routing, settings)
+    cfg = build_xray_config(node, routing, settings, api_port=api_port)
 
     # Replace inbounds: internal SOCKS (for sing-box relay) + user proxy ports + API
-    socks_port = settings.socks_port or 10808
-    http_port = settings.http_port or 8080
+    socks_port = settings.socks_port or DEFAULT_SOCKS_PORT
+    http_port = settings.http_port or DEFAULT_HTTP_PORT
     cfg["inbounds"] = [
         {
             "tag": "socks-in",
@@ -283,7 +291,7 @@ def _build_xray_hybrid_config(
         {
             "tag": "api",
             "listen": PROXY_HOST,
-            "port": XRAY_STATS_API_PORT,
+            "port": api_port,
             "protocol": "dokodemo-door",
             "settings": {"address": PROXY_HOST},
         },

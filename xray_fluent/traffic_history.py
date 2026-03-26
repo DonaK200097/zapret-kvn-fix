@@ -132,17 +132,18 @@ class TrafficHistoryStorage:
         s.total_upload = total_up
         s.total_download = total_down
 
-        # Update daily totals
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        daily = self._daily_totals.get(today)
-        if daily is None:
-            daily = {"upload": 0, "download": 0}
-            self._daily_totals[today] = daily
-        daily["upload"] = max(daily["upload"], total_up)
-        daily["download"] = max(daily["download"], total_down)
 
     def end_session(self) -> None:
         if self._current_session:
+            # Accumulate session totals into daily totals
+            today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+            daily = self._daily_totals.get(today)
+            if daily is None:
+                daily = {"upload": 0, "download": 0}
+                self._daily_totals[today] = daily
+            daily["upload"] += self._current_session.total_upload
+            daily["download"] += self._current_session.total_download
+
             self._current_session.ended_at = datetime.now(timezone.utc).isoformat()
             self._current_session = None
             self._save()

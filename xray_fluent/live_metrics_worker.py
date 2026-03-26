@@ -35,7 +35,7 @@ class LiveMetricsWorker(QThread):
         mode: str = "xray",
         clash_api_port: int = 19090,
         socks_port: int = 10808,
-        http_port: int = 8080,
+        http_port: int = 10809,
     ):
         super().__init__()
         self._xray_path = xray_path
@@ -138,10 +138,10 @@ class LiveMetricsWorker(QThread):
             prev_in, prev_out = prev_bytes.get(p.exe, (0, 0))
             cl_in, cl_out = closed_bytes.get(p.exe, (0, 0))
 
-            # Detect closed connections: active bytes dropped
-            if p.bytes_in < prev_in:
+            # Detect closed connections: active bytes dropped (but not to zero — that indicates API glitch)
+            if p.bytes_in < prev_in and p.bytes_in > 0:
                 cl_in += prev_in - p.bytes_in
-            if p.bytes_out < prev_out:
+            if p.bytes_out < prev_out and p.bytes_out > 0:
                 cl_out += prev_out - p.bytes_out
             closed_bytes[p.exe] = (cl_in, cl_out)
 

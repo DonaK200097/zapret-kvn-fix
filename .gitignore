@@ -32,3 +32,8 @@ desktop.ini
 # Archives
 *.zip
 /.claude
+/docs/changelog
+/.agent
+/.codex
+CLAUDE.md
+AGENTS.md

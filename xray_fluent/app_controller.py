@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import socket
 import time
 from datetime import datetime, timezone
 import json
@@ -13,7 +14,7 @@ from .country_flags import CountryResolver, detect_country
 from .config_builder import build_xray_config
 from .singbox_config_builder import build_singbox_config, build_xray_hybrid_config, needs_xray_hybrid, TunConfigBundle
 from .connectivity_test import ConnectivityTestWorker
-from .constants import APP_NAME, LOG_DIR, ROUTING_MODES, SINGBOX_CLASH_API_PORT, XRAY_STATS_API_PORT
+from .constants import APP_NAME, LOG_DIR, ROUTING_MODES, SINGBOX_CLASH_API_PORT, DEFAULT_XRAY_STATS_API_PORT
 from .diagnostics import export_diagnostics
 from .link_parser import parse_links_text
 from .live_metrics_worker import LiveMetricsWorker
@@ -32,6 +33,22 @@ from .xray_core_updater import XrayCoreUpdateResult, XrayCoreUpdateWorker
 from .traffic_history import TrafficHistoryStorage
 from .xray_manager import XrayManager, get_xray_version
 from .zapret_manager import ZapretManager
+
+
+def _find_free_api_port(preferred: int | None = None, excluded: set[int] | None = None) -> int:
+    """Find a free TCP port near *preferred* for the xray stats API."""
+    if preferred is None:
+        preferred = DEFAULT_XRAY_STATS_API_PORT
+    for port in range(preferred, preferred + 100):
+        if excluded and port in excluded:
+            continue
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(f"No free port in range {preferred}-{preferred + 100}")
 
 
 class AppController(QObject):
@@ -90,10 +107,12 @@ class AppController(QObject):
         self._xray_update_silent = False
         self._reconnect_after_xray_update = False
         self._reconnecting = False
+        self._connecting = False
         self._switching = False  # suppress intermediate UI updates during stop→start
         self._active_core: str = "xray"  # "xray" | "singbox" | "tun2socks"
         self._protect_ss_port: int = 0
         self._protect_ss_password: str = ""
+        self._xray_api_port: int = 0
         self._traffic_history = TrafficHistoryStorage()
         self._traffic_save_counter = 0
 
@@ -441,129 +460,151 @@ class AppController(QObject):
         return previous, self.connected
 
     def connect_selected(self, allow_during_reconnect: bool = False) -> bool:
-        if self._reconnecting and not allow_during_reconnect:
-            self._set_connection_status("starting", "Переподключение...", level="info")
+        if self._connecting:
             return False
+        self._connecting = True
+        try:
+            if self._reconnecting and not allow_during_reconnect:
+                self._set_connection_status("starting", "Переподключение...", level="info")
+                return False
 
-        if self.locked:
-            self._set_connection_status(
-                "error",
-                "Приложение заблокировано. Разблокируйте для подключения.",
-                level="warning",
-            )
-            return False
-
-        node = self.selected_node
-        if not node:
-            self._set_connection_status("error", "Сначала выберите сервер.", level="warning")
-            return False
-
-        tun = self.state.settings.tun_mode
-
-        if tun:
-            self._log(f"[tun] attempting TUN connect, admin={_is_admin()}")
-            self._set_connection_status("starting", f"Запуск VPN: {node.name}...", level="info")
-
-            if not _is_admin():
-                self._log("[tun] NOT admin — aborting")
+            if self.locked:
                 self._set_connection_status(
                     "error",
-                    "Режим TUN требует прав Администратора. Запустите приложение от имени Администратора.",
-                    level="error",
+                    "Приложение заблокировано. Разблокируйте для подключения.",
+                    level="warning",
                 )
                 return False
 
-            # TUN doesn't use system proxy — disable if it was left on
-            if self.proxy.is_enabled():
-                self.proxy.disable(restore_previous=True)
+            node = self.selected_node
+            if not node:
+                self._set_connection_status("error", "Сначала выберите сервер.", level="warning")
+                return False
 
-            self._tun_log_count = 0
-            engine = self.state.settings.tun_engine
+            try:
+                self._xray_api_port = _find_free_api_port(
+                    excluded={self.state.settings.socks_port, self.state.settings.http_port},
+                )
+            except RuntimeError:
+                self._set_connection_status("error", "Не удалось найти свободный порт для API Xray", level="error")
+                return False
 
-            if engine == "singbox":
-                # --- sing-box TUN (experimental, supports process routing) ---
-                self._active_core = "singbox"  # Set early so metrics worker gets correct mode
-                bundle = build_singbox_config(node, self.state.routing, self.state.settings)
+            prev_active_core = self._active_core
+            tun = self.state.settings.tun_mode
 
-                if bundle.is_hybrid:
-                    self._set_connection_status("starting", "Запуск Xray (dialerProxy)...", level="info")
-                    xray_cfg = bundle.xray_config
-                    xray_cfg["log"] = {"loglevel": "error"}
-                    xray_ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
+            if tun:
+                self._log(f"[tun] attempting TUN connect, admin={_is_admin()}")
+                self._set_connection_status("starting", f"Запуск VPN: {node.name}...", level="info")
+
+                if not _is_admin():
+                    self._log("[tun] NOT admin — aborting")
+                    self._set_connection_status(
+                        "error",
+                        "Режим TUN требует прав Администратора. Запустите приложение от имени Администратора.",
+                        level="error",
+                    )
+                    return False
+
+                # TUN doesn't use system proxy — disable if it was left on
+                if self.proxy.is_enabled():
+                    self.proxy.disable(restore_previous=True)
+
+                self._tun_log_count = 0
+                engine = self.state.settings.tun_engine
+
+                if engine == "singbox":
+                    # --- sing-box TUN (experimental, supports process routing) ---
+                    self._active_core = "singbox"  # Set early so metrics worker gets correct mode
+                    bundle = build_singbox_config(node, self.state.routing, self.state.settings, api_port=self._xray_api_port)
+
+                    if bundle.is_hybrid:
+                        self._set_connection_status("starting", "Запуск Xray (dialerProxy)...", level="info")
+                        xray_cfg = bundle.xray_config
+                        xray_cfg["log"] = {"loglevel": "error"}
+                        xray_ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
+                        if not xray_ok:
+                            self._log("[tun] xray start failed")
+                            self._active_core = prev_active_core
+                            return False
+                        self._set_connection_status("starting", "Xray запущен. Создание TUN адаптера...", level="info")
+
+                    self._log(f"[tun] starting sing-box TUN (hybrid={bundle.is_hybrid})")
+                    sb_ok = self.singbox.start(self.state.settings.singbox_path, bundle.singbox_config)
+                    self._log(f"[tun] sing-box start result: {sb_ok}")
+                    if not sb_ok:
+                        if bundle.is_hybrid:
+                            self.xray.stop()
+                        self._set_connection_status(
+                            "error",
+                            "Не удалось создать TUN адаптер. Проверьте наличие wintun.dll в core/.",
+                            level="error",
+                        )
+                        self._active_core = prev_active_core
+                        return False
+                    self._protect_ss_port = bundle.protect_port
+                    self._protect_ss_password = bundle.protect_password
+                else:
+                    # --- tun2socks TUN (stable, default) ---
+                    self._active_core = "tun2socks"
+                    config = build_xray_config(node, self.state.routing, self.state.settings, api_port=self._xray_api_port)
+                    config["log"] = {"loglevel": "error"}
+                    xray_ok = self.xray.start(self.state.settings.xray_path, config)
                     if not xray_ok:
                         self._log("[tun] xray start failed")
+                        self._active_core = prev_active_core
                         return False
                     self._set_connection_status("starting", "Xray запущен. Создание TUN адаптера...", level="info")
 
-                self._log(f"[tun] starting sing-box TUN (hybrid={bundle.is_hybrid})")
-                sb_ok = self.singbox.start(self.state.settings.singbox_path, bundle.singbox_config)
-                self._log(f"[tun] sing-box start result: {sb_ok}")
-                if not sb_ok:
-                    if bundle.is_hybrid:
+                    socks_port = self.state.settings.socks_port
+                    self._log(f"[tun] starting tun2socks -> SOCKS 127.0.0.1:{socks_port}")
+                    tun_ok = self.tun2socks.start(socks_port, server_ip=node.server)
+                    self._log(f"[tun] tun2socks start result: {tun_ok}")
+                    if not tun_ok:
                         self.xray.stop()
-                    self._set_connection_status(
-                        "error",
-                        "Не удалось создать TUN адаптер. Проверьте наличие wintun.dll в core/.",
-                        level="error",
-                    )
-                    return False
-                self._protect_ss_port = bundle.protect_port
-                self._protect_ss_password = bundle.protect_password
+                        self._set_connection_status(
+                            "error",
+                            "Не удалось создать TUN адаптер. Проверьте наличие tun2socks и wintun.dll в core/.",
+                            level="error",
+                        )
+                        self._active_core = prev_active_core
+                        return False
             else:
-                # --- tun2socks TUN (stable, default) ---
-                self._active_core = "tun2socks"
-                config = build_xray_config(node, self.state.routing, self.state.settings)
-                config["log"] = {"loglevel": "error"}
-                xray_ok = self.xray.start(self.state.settings.xray_path, config)
-                if not xray_ok:
-                    self._log("[tun] xray start failed")
-                    return False
-                self._set_connection_status("starting", "Xray запущен. Создание TUN адаптера...", level="info")
-
-                socks_port = self.state.settings.socks_port
-                self._log(f"[tun] starting tun2socks -> SOCKS 127.0.0.1:{socks_port}")
-                tun_ok = self.tun2socks.start(socks_port, server_ip=node.server)
-                self._log(f"[tun] tun2socks start result: {tun_ok}")
-                if not tun_ok:
-                    self.xray.stop()
-                    self._set_connection_status(
-                        "error",
-                        "Не удалось создать TUN адаптер. Проверьте наличие tun2socks и wintun.dll в core/.",
-                        level="error",
-                    )
-                    return False
-        else:
-            self._active_core = "xray"
-            self._set_connection_status("starting", f"Запуск прокси: {node.name}...", level="info")
-            config = build_xray_config(node, self.state.routing, self.state.settings)
-            ok = self.xray.start(self.state.settings.xray_path, config)
-            if not ok:
-                return False
-
-            if self.state.settings.enable_system_proxy:
-                try:
-                    self.proxy.enable(
-                        self.state.settings.http_port,
-                        self.state.settings.socks_port,
-                        bypass_lan=self.state.routing.bypass_lan,
-                    )
-                except Exception as exc:
-                    self.xray.stop()
-                    self._set_connection_status(
-                        "error",
-                        f"Не удалось включить системный прокси: {exc}",
-                        level="error",
-                    )
+                self._active_core = "xray"
+                self._set_connection_status("starting", f"Запуск прокси: {node.name}...", level="info")
+                config = build_xray_config(node, self.state.routing, self.state.settings, api_port=self._xray_api_port)
+                ok = self.xray.start(self.state.settings.xray_path, config)
+                if not ok:
+                    self._active_core = prev_active_core
                     return False
 
-        node.last_used_at = datetime.now(timezone.utc).isoformat()
-        self._set_connection_status("running", f"Подключено: {node.name}" + (" (TUN)" if tun else ""), level="success")
-        self.save()
-        node_name = node.name if node else "unknown"
-        self._traffic_history.start_session(node_name, self._active_core)
-        return True
+                if self.state.settings.enable_system_proxy:
+                    try:
+                        self.proxy.enable(
+                            self.state.settings.http_port,
+                            self.state.settings.socks_port,
+                            bypass_lan=self.state.routing.bypass_lan,
+                        )
+                    except Exception as exc:
+                        self.xray.stop()
+                        self._set_connection_status(
+                            "error",
+                            f"Не удалось включить системный прокси: {exc}",
+                            level="error",
+                        )
+                        self._active_core = prev_active_core
+                        return False
+
+            node.last_used_at = datetime.now(timezone.utc).isoformat()
+            self._set_connection_status("running", f"Подключено: {node.name}" + (" (TUN)" if tun else ""), level="success")
+            self.save()
+            node_name = node.name if node else "unknown"
+            self._traffic_history.start_session(node_name, self._active_core)
+            return True
+        finally:
+            self._connecting = False
 
     def disconnect_current(self, disable_proxy: bool = True, emit_status: bool = True) -> bool:
+        self._xray_api_port = 0
         self._auto_switch_low_since = 0.0
         self._auto_switch_high_ticks = 0
         self._auto_switch_active_download = False
@@ -789,7 +830,7 @@ class AppController(QObject):
         mode = "singbox" if self._active_core == "singbox" else "xray"
         self._metrics_worker = LiveMetricsWorker(
             self.state.settings.xray_path,
-            XRAY_STATS_API_PORT,
+            self._xray_api_port or DEFAULT_XRAY_STATS_API_PORT,
             ping_host=ping_host,
             ping_port=ping_port,
             mode=mode,
@@ -1138,7 +1179,7 @@ class AppController(QObject):
                 self._log(f"[hot-swap] {reason} — restarting xray only, tun2socks stays up")
                 self._set_connection_status("starting", f"Переключение на {node.name}...", level="info")
                 self.xray.stop()
-                config = build_xray_config(node, self.state.routing, self.state.settings)
+                config = build_xray_config(node, self.state.routing, self.state.settings, api_port=self._xray_api_port)
                 config["log"] = {"loglevel": "error"}
                 ok = self.xray.start(self.state.settings.xray_path, config)
                 if ok:
@@ -1173,7 +1214,7 @@ class AppController(QObject):
                 self._log(f"[hot-swap] {reason} — restarting xray only, sing-box TUN stays up")
                 self._set_connection_status("starting", f"Переключение на {node.name}...", level="info")
                 self.xray.stop()
-                xray_cfg = build_xray_hybrid_config(node, self.state.routing, self.state.settings, self._protect_ss_port, self._protect_ss_password)
+                xray_cfg = build_xray_hybrid_config(node, self.state.routing, self.state.settings, self._protect_ss_port, self._protect_ss_password, api_port=self._xray_api_port)
                 xray_cfg["log"] = {"loglevel": "error"}
                 ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
                 if ok:

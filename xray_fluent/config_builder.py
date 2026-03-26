@@ -9,7 +9,7 @@ from .constants import (
     ROUTING_DIRECT,
     ROUTING_GLOBAL,
     ROUTING_RULE,
-    XRAY_STATS_API_PORT,
+    DEFAULT_XRAY_STATS_API_PORT,
 )
 from .models import AppSettings, Node, RoutingSettings
 from .service_presets import SERVICE_PRESETS_BY_ID
@@ -71,7 +71,9 @@ def _append_domain_ip_rule(rules: list[dict[str, Any]], items: list[str], outbou
         )
 
 
-def build_xray_config(node: Node, routing: RoutingSettings, settings: AppSettings) -> dict[str, Any]:
+def build_xray_config(node: Node, routing: RoutingSettings, settings: AppSettings, api_port: int = 0) -> dict[str, Any]:
+    if not api_port:
+        api_port = DEFAULT_XRAY_STATS_API_PORT
     proxy_outbound = deepcopy(node.outbound)
     proxy_outbound["tag"] = "proxy"
 
@@ -195,7 +197,7 @@ def build_xray_config(node: Node, routing: RoutingSettings, settings: AppSetting
             {
                 "tag": "api",
                 "listen": PROXY_HOST,
-                "port": XRAY_STATS_API_PORT,
+                "port": api_port,
                 "protocol": "dokodemo-door",
                 "settings": {
                     "address": PROXY_HOST,

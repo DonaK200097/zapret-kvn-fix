@@ -338,7 +338,7 @@ class MainWindow(FluentWindow):
     def _show_status(self, level: str, message: str) -> None:
         level = level.lower().strip()
         if level == "error":
-            InfoBar.error("Ошибка", message, position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self)
+            InfoBar.error("Ошибка", message, position=InfoBarPosition.TOP_RIGHT, duration=6000, parent=self)
         elif level == "warning":
             InfoBar.warning("Внимание", message, position=InfoBarPosition.TOP_RIGHT, duration=3000, parent=self)
         elif level == "success":

@@ -233,6 +233,7 @@ class Tun2SocksManager(QObject):
                     return False
             return True
         except Exception as exc:
+            self._cleanup_routes()
             self.log_received.emit(f"[tun2socks] route setup error: {exc}")
             return False
 
