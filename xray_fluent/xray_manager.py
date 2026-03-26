@@ -11,6 +11,7 @@ from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 from .constants import RUNTIME_DIR, XRAY_CONFIG_FILE, XRAY_PATH_DEFAULT
 from .path_utils import resolve_configured_path
+from .subprocess_utils import result_output_text, run_text
 
 
 class XrayManager(QObject):
@@ -155,10 +156,8 @@ def get_xray_version(xray_path: str) -> str | None:
     if not exe.exists():
         return None
     try:
-        result = subprocess.run(
+        result = run_text(
             [str(exe), "version"],
-            capture_output=True,
-            text=True,
             timeout=3,
             check=False,
             creationflags=_CREATE_NO_WINDOW,
@@ -166,7 +165,7 @@ def get_xray_version(xray_path: str) -> str | None:
     except Exception:
         return None
 
-    lines = (result.stdout or result.stderr or "").splitlines()
+    lines = result_output_text(result).splitlines()
     if not lines:
         return None
     return lines[0].strip()

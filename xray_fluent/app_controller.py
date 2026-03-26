@@ -27,6 +27,7 @@ from .tun2socks_manager import Tun2SocksManager
 from .singbox_manager import SingBoxManager, get_singbox_version
 from .storage import PassphraseRequired, StateStorage
 from .startup import build_startup_command, set_startup_enabled
+from .subprocess_utils import result_output_text, run_text
 from .xray_core_updater import XrayCoreUpdateResult, XrayCoreUpdateWorker
 from .traffic_history import TrafficHistoryStorage
 from .xray_manager import XrayManager, get_xray_version
@@ -234,12 +235,12 @@ class AppController(QObject):
         """Remove the wintun TUN adapter if it was left behind."""
         import subprocess as _sp
         try:
-            result = _sp.run(
+            result = run_text(
                 ["netsh", "interface", "show", "interface"],
-                capture_output=True, text=True, timeout=5,
+                timeout=5,
                 creationflags=0x08000000,
             )
-            if "ZapretKVN_TUN" in (result.stdout or ""):
+            if "ZapretKVN_TUN" in result_output_text(result):
                 _sp.run(
                     ["netsh", "interface", "set", "interface", "ZapretKVN_TUN", "admin=disable"],
                     capture_output=True, timeout=5,

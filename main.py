@@ -10,6 +10,8 @@ from pathlib import Path
 import sys
 import threading
 
+from xray_fluent.subprocess_utils import result_output_text, run_text
+
 
 STARTUP_LOG_NAME = "startup.log"
 SHOW_CONSOLE_ARG = "--show-console"
@@ -133,15 +135,29 @@ def _log_unhandled_exception(exc_type, exc_value, exc_traceback) -> None:
     _show_fatal_message_box()
 
 
+def _log_background_exception(args: threading.ExceptHookArgs) -> None:
+    if issubclass(args.exc_type, KeyboardInterrupt):
+        return
+    _bootstrap_logger.exception(
+        "Unhandled background exception",
+        exc_info=(args.exc_type, args.exc_value, args.exc_traceback),
+    )
+
+
 def _install_exception_hooks() -> None:
     sys.excepthook = _log_unhandled_exception
-    threading.excepthook = lambda args: _log_unhandled_exception(
-        args.exc_type,
-        args.exc_value,
-        args.exc_traceback,
-    )
+    threading.excepthook = _log_background_exception
     atexit.register(_disable_system_proxy_on_exit)
     atexit.register(_log_process_exit)
+
+
+def _looks_like_app_proxy(proxy_server: str) -> bool:
+    value = proxy_server.lower().replace(" ", "")
+    return (
+        "http=127.0.0.1:" in value
+        and "https=127.0.0.1:" in value
+        and "socks=127.0.0.1:" in value
+    )
 
 
 def _disable_system_proxy_on_exit() -> None:
@@ -155,7 +171,11 @@ def _disable_system_proxy_on_exit() -> None:
                             r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
                             0, winreg.KEY_READ) as key:
             enabled, _ = winreg.QueryValueEx(key, "ProxyEnable")
-        if int(enabled) == 1:
+            try:
+                proxy_server, _ = winreg.QueryValueEx(key, "ProxyServer")
+            except FileNotFoundError:
+                proxy_server = ""
+        if int(enabled) == 1 and _looks_like_app_proxy(str(proxy_server or "")):
             with winreg.OpenKey(winreg.HKEY_CURRENT_USER,
                                 r"Software\Microsoft\Windows\CurrentVersion\Internet Settings",
                                 0, winreg.KEY_SET_VALUE) as key:
@@ -163,15 +183,12 @@ def _disable_system_proxy_on_exit() -> None:
             _bootstrap_logger.info("System proxy disabled on exit (safety)")
     except Exception:
         pass
-    # Kill orphaned sing-box/xray and disable TUN adapter
+    # Disable leftover TUN adapter if our interface is still present.
     try:
-        import subprocess as _sp
-        _flags = 0x08000000
-        _sp.run(["taskkill", "/F", "/IM", "sing-box.exe"], capture_output=True, timeout=5, creationflags=_flags)
-        _sp.run(["taskkill", "/F", "/IM", "xray.exe"], capture_output=True, timeout=5, creationflags=_flags)
-        r = _sp.run(["netsh", "interface", "show", "interface"], capture_output=True, text=True, timeout=5, creationflags=_flags)
-        if "ZapretKVN_TUN" in (r.stdout or ""):
-            _sp.run(["netsh", "interface", "set", "interface", "ZapretKVN_TUN", "admin=disable"], capture_output=True, timeout=5, creationflags=_flags)
+        r = run_text(["netsh", "interface", "show", "interface"], timeout=5, creationflags=0x08000000)
+        if "ZapretKVN_TUN" in result_output_text(r):
+            import subprocess as _sp
+            _sp.run(["netsh", "interface", "set", "interface", "ZapretKVN_TUN", "admin=disable"], capture_output=True, timeout=5, creationflags=0x08000000)
             _bootstrap_logger.info("TUN adapter disabled on exit (safety)")
     except Exception:
         pass
@@ -266,7 +283,7 @@ def main() -> int:
     mica_enabled = getattr(window, "isMicaEffectEnabled", lambda: False)()
     _bootstrap_logger.info("main window created: mica_enabled=%s", mica_enabled)
 
-    if window.controller.state.settings.start_minimized and not args.minimized:
+    if window.controller.state.settings.start_minimized and not args.minimized and not args.show_console:
         start_hidden = True
 
     if start_hidden:

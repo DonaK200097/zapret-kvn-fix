@@ -13,6 +13,7 @@ from PyQt6.QtCore import QObject, QProcess, pyqtSignal
 
 from .constants import RUNTIME_DIR, SINGBOX_CONFIG_FILE, SINGBOX_PATH_DEFAULT
 from .path_utils import resolve_configured_path
+from .subprocess_utils import kill_processes_by_path, result_output_text, run_text
 
 
 class SingBoxManager(QObject):
@@ -105,14 +106,8 @@ class SingBoxManager(QObject):
         """Kill orphaned sing-box processes that hold the TUN adapter."""
         if os.name != "nt":
             return
-        exe_name = exe.name
         try:
-            result = subprocess.run(
-                ["taskkill", "/F", "/IM", exe_name],
-                capture_output=True, timeout=5,
-                creationflags=_CREATE_NO_WINDOW,
-            )
-            if result.returncode == 0:
+            if kill_processes_by_path(exe.name, exe, timeout=5):
                 time.sleep(1)  # give OS time to release the TUN adapter
         except Exception:
             pass
@@ -149,13 +144,13 @@ class SingBoxManager(QObject):
         waited = 0.0
         while waited < max_wait:
             try:
-                result = subprocess.run(
+                result = run_text(
                     ["netsh", "interface", "show", "interface"],
-                    capture_output=True, text=True, timeout=3,
+                    timeout=3,
                     creationflags=_CREATE_NO_WINDOW,
                 )
                 # Check if any xftun* adapter still exists
-                if "xftun" not in (result.stdout or ""):
+                if "xftun" not in result_output_text(result):
                     return  # TUN adapter gone
             except Exception:
                 return  # can't check, proceed anyway
@@ -205,10 +200,8 @@ def get_singbox_version(singbox_path: str) -> str | None:
     if not exe.exists():
         return None
     try:
-        result = subprocess.run(
+        result = run_text(
             [str(exe), "version"],
-            capture_output=True,
-            text=True,
             timeout=3,
             check=False,
             creationflags=_CREATE_NO_WINDOW,
@@ -216,7 +209,7 @@ def get_singbox_version(singbox_path: str) -> str | None:
     except Exception:
         return None
 
-    lines = (result.stdout or result.stderr or "").splitlines()
+    lines = result_output_text(result).splitlines()
     if not lines:
         return None
     return lines[0].strip()

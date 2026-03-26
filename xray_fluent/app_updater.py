@@ -295,6 +295,7 @@ class UpdateDownloader(QThread):
             script = tmp_dir / "_update.bat"
             script.write_text(
                 "@echo off\r\n"
+                "chcp 65001 >nul\r\n"
                 "echo Updating zapret kvn...\r\n"
                 "timeout /t 2 /nobreak >nul\r\n"
                 f'taskkill /F /IM {exe_name} 2>nul\r\n'
@@ -303,7 +304,7 @@ class UpdateDownloader(QThread):
                 "echo Update complete. Restarting...\r\n"
                 f'start "" "{app_dir}\\{exe_name}"\r\n'
                 f'rmdir /S /Q "{str(tmp_dir)}"\r\n',
-                encoding="ascii",
+                encoding="utf-8-sig",
             )
 
             # Launch script and exit

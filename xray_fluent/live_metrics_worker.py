@@ -17,6 +17,7 @@ from .constants import XRAY_PATH_DEFAULT
 from .path_utils import resolve_configured_path
 from .ping_worker import tcp_ping
 from .process_traffic_collector import collect_process_stats, ProcessTrafficSnapshot
+from .subprocess_utils import decode_output, run_text
 from .win_proc_monitor import get_proxy_connections, ProxyProcessInfo
 
 
@@ -196,10 +197,8 @@ class LiveMetricsWorker(QThread):
             return None, None
 
         try:
-            result = subprocess.run(
+            result = run_text(
                 [str(exe), "api", "statsquery", f"--server=127.0.0.1:{self._api_port}"],
-                capture_output=True,
-                text=True,
                 timeout=2,
                 check=False,
                 creationflags=_CREATE_NO_WINDOW,
@@ -211,7 +210,7 @@ class LiveMetricsWorker(QThread):
             return None, None
 
         try:
-            payload = json.loads(result.stdout or "{}")
+            payload = json.loads(decode_output(result.stdout) or "{}")
         except json.JSONDecodeError:
             return None, None
 
