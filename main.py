@@ -220,7 +220,6 @@ def main() -> int:
 
     parser = argparse.ArgumentParser(description="zapret kvn")
     parser.add_argument("--tray", action="store_true", help="start in tray")
-    parser.add_argument("--minimized", action="store_true", dest="tray", help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     _bootstrap_logger.info("parsed arguments: tray=%s", args.tray)
