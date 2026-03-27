@@ -27,7 +27,7 @@ from .lock_dialog import PasswordDialog
 from .logs_page import LogsPage
 from .node_edit_dialog import NodeEditDialog
 from .nodes_page import NodesPage
-from .routing_page import RoutingPage
+from .singbox_page import SingboxPage
 from .settings_page import SettingsPage
 from .about_page import AboutPage
 from .history_page import HistoryPage
@@ -47,6 +47,7 @@ class MainWindow(FluentWindow):
         self._deferred_dashboard_metrics: tuple[float, float, int | None] | None = None
         self._deferred_process_stats: list | None = None
         self._has_deferred_process_stats = False
+        self._geometry_persistence_ready = False
         self.tray: QSystemTrayIcon | None = None
         self.tray_show_action: QAction | None = None
         self.tray_connect_action: QAction | None = None
@@ -73,7 +74,7 @@ class MainWindow(FluentWindow):
         self.controller = AppController(self)
         self.dashboard_page = DashboardPage(self)
         self.nodes_page = NodesPage(self)
-        self.routing_page = RoutingPage(self)
+        self.singbox_page = SingboxPage(self)
         self.zapret_page = ZapretPage(self)
         self.logs_page = LogsPage(self)
         self.settings_page = SettingsPage(self)
@@ -87,6 +88,8 @@ class MainWindow(FluentWindow):
         self._init_window()
 
         loaded = self._load_with_passphrase()
+        if loaded:
+            self._load_singbox_editor_document()
 
         unlocked = True
         if loaded and self.controller.state.security.enabled:
@@ -117,7 +120,7 @@ class MainWindow(FluentWindow):
         self.navigationInterface.setExpandWidth(200)
         self.addSubInterface(self.dashboard_page, FIF.SPEED_HIGH, "Панель")
         self.addSubInterface(self.nodes_page, FIF.LINK, "Серверы")
-        self.addSubInterface(self.routing_page, FIF.GLOBE, "Маршруты")
+        self.addSubInterface(self.singbox_page, FIF.CODE, "sing-box")
         self.addSubInterface(self.zapret_page, FIF.COMMAND_PROMPT, "Zapret")
         self.addSubInterface(self.logs_page, FIF.DOCUMENT, "Логи")
         self.addSubInterface(self.history_page, FIF.HISTORY, "История")
@@ -193,7 +196,10 @@ class MainWindow(FluentWindow):
         self.nodes_page.edit_node_requested.connect(self._on_edit_node)
         self.nodes_page.bulk_edit_requested.connect(self._on_bulk_edit_nodes)
 
-        self.routing_page.apply_requested.connect(self.controller.update_routing)
+        self.singbox_page.open_requested.connect(self._open_singbox_config)
+        self.singbox_page.save_requested.connect(self._save_singbox_config)
+        self.singbox_page.validate_requested.connect(self._validate_singbox_config)
+        self.singbox_page.apply_requested.connect(self._apply_singbox_config)
 
         self.zapret_page.start_requested.connect(self._on_zapret_start)
         self.zapret_page.stop_requested.connect(self._on_zapret_stop)
@@ -242,14 +248,18 @@ class MainWindow(FluentWindow):
         self.stackedWidget.currentChanged.connect(self._on_current_interface_changed)
 
     def _init_window(self) -> None:
-        s = self.controller.state.settings
         self.setMinimumSize(600, 450)
-        self.resize(s.window_width, s.window_height)
-        if s.window_x >= 0 and s.window_y >= 0:
-            if self._is_position_on_screen(s.window_x, s.window_y):
-                self.move(s.window_x, s.window_y)
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(QIcon(":/qfluentwidgets/images/logo.png"))
+        self._apply_window_geometry(self.controller.state.settings)
+
+    def _apply_window_geometry(self, settings: AppSettings) -> None:
+        width = max(self.minimumWidth(), int(settings.window_width or 1000))
+        height = max(self.minimumHeight(), int(settings.window_height or 720))
+        self.resize(width, height)
+        if settings.window_x >= 0 and settings.window_y >= 0:
+            if self._is_position_on_screen(settings.window_x, settings.window_y):
+                self.move(settings.window_x, settings.window_y)
 
     @staticmethod
     def _is_position_on_screen(x: int, y: int) -> bool:
@@ -288,7 +298,6 @@ class MainWindow(FluentWindow):
             self.tray_connect_action.setEnabled(not busy)
 
     def _on_routing_changed(self, routing: RoutingSettings) -> None:
-        self.routing_page.set_routing(routing)
         self.dashboard_page.set_routing_snapshot(routing)
         if self.tray_mode_global is not None:
             self.tray_mode_global.setChecked(routing.mode == "global")
@@ -301,8 +310,9 @@ class MainWindow(FluentWindow):
         self.settings_page.set_values(settings, self.controller.state.security)
         self.settings_page.set_encryption_active(self.controller.is_data_encrypted())
         self.dashboard_page.set_settings_snapshot(settings)
-        self.routing_page.set_tun_mode(settings.tun_mode)
+        self._apply_window_geometry(settings)
         self._apply_theme(settings.theme, settings.accent_color)
+        self._refresh_tray_tooltip()
 
     def _on_ping_updated(self, node_id: str, ping_ms: int | None) -> None:
         self.nodes_page.update_ping(node_id, ping_ms)
@@ -530,6 +540,59 @@ class MainWindow(FluentWindow):
         if clipboard is not None:
             clipboard.setText(payload)
             self._show_status("info", "Экспорт отменён, JSON скопирован в буфер обмена")
+
+    def _load_singbox_editor_document(self) -> None:
+        try:
+            path, text = self.controller.load_active_singbox_config_text()
+        except Exception as exc:
+            self.singbox_page.set_status("error", str(exc))
+            return
+        self.singbox_page.set_document(path, text)
+        self.singbox_page.set_status("info", f"Открыт файл: {path.name}")
+
+    def _open_singbox_config(self) -> None:
+        base_dir = str(self.controller.get_singbox_config_dir())
+        file_path, _ = QFileDialog.getOpenFileName(self, "Открыть sing-box config", base_dir, "JSON files (*.json)")
+        if not file_path:
+            return
+        try:
+            path, text = self.controller.load_singbox_config_text(file_path)
+        except Exception as exc:
+            self.singbox_page.set_status("error", str(exc))
+            self._show_status("error", str(exc).splitlines()[0])
+            return
+        self.singbox_page.set_document(path, text)
+        self.singbox_page.set_status("info", f"Открыт файл: {path.name}")
+        self._show_status("success", f"Открыт {path.name}")
+
+    def _save_singbox_config(self, text: str) -> None:
+        try:
+            path = self.controller.save_singbox_config_text(text)
+        except Exception as exc:
+            self.singbox_page.set_status("error", str(exc))
+            self._show_status("error", str(exc).splitlines()[0])
+            return
+        self.singbox_page.mark_saved(path, text)
+        self.singbox_page.set_status("success", f"Сохранено: {path.name}")
+        self._show_status("success", f"Сохранено: {path.name}")
+
+    def _validate_singbox_config(self, text: str) -> None:
+        ok, message = self.controller.validate_singbox_json_text(text)
+        self.singbox_page.set_status("success" if ok else "error", message)
+        if ok:
+            self._show_status("success", "JSON корректен")
+
+    def _apply_singbox_config(self, text: str) -> None:
+        ok, path, message = self.controller.apply_singbox_config_text(text)
+        if not ok:
+            self.singbox_page.set_status("error", message)
+            self._show_status("error", message.splitlines()[0])
+            return
+        if path is not None:
+            self.singbox_page.mark_saved(path, text)
+        level = "info" if "Применяю" in message else "success"
+        self.singbox_page.set_status(level, message)
+        self._show_status(level, message.splitlines()[0])
 
     def _on_dashboard_tun_toggled(self, checked: bool) -> None:
         from copy import deepcopy
@@ -770,7 +833,12 @@ class MainWindow(FluentWindow):
             return
         node = self.controller.selected_node
         status = "Подключено" if self.controller.connected else "Отключено"
-        node_text = node.name if node else "Нет сервера"
+        if node is not None:
+            node_text = node.name
+        elif self.controller.is_singbox_editor_mode():
+            node_text = self.controller.get_active_singbox_config_name()
+        else:
+            node_text = "Нет сервера"
         self.tray.setToolTip(f"{APP_NAME}\n{status}\n{node_text}")
 
     def _ensure_unlocked(self, startup: bool) -> bool:
@@ -793,6 +861,7 @@ class MainWindow(FluentWindow):
 
     def _load_with_passphrase(self) -> bool:
         if self.controller.load():
+            self._geometry_persistence_ready = True
             return True
 
         # State file is encrypted — ask for passphrase
@@ -811,6 +880,7 @@ class MainWindow(FluentWindow):
             self.controller.storage.passphrase = passphrase
             try:
                 self.controller.load()
+                self._geometry_persistence_ready = True
                 return True
             except Exception:
                 self._show_status("error", "Неверный пароль шифрования")
@@ -903,6 +973,8 @@ class MainWindow(FluentWindow):
         s.window_y = geo.y()
         s.window_width = geo.width()
         s.window_height = geo.height()
+        if self._geometry_persistence_ready:
+            controller.schedule_save()
 
     def moveEvent(self, e) -> None:
         super().moveEvent(e)

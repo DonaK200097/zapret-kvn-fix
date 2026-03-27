@@ -31,6 +31,7 @@ from .service_presets import SERVICE_PRESETS_BY_ID
 
 _XRAY_SOCKS_PORT = 11808
 _SS_PROTECT_METHOD = "chacha20-ietf-poly1305"
+_SUPPORTED_NATIVE_PROTOCOLS = {"vless", "vmess", "trojan", "shadowsocks", "socks", "http"}
 
 _PROTECTED_PROCESSES = {"xray.exe", "sing-box.exe", "tun2socks.exe"}
 
@@ -106,6 +107,23 @@ def build_xray_hybrid_config(
 ) -> dict[str, Any]:
     """Public wrapper for hot-swap: rebuild only xray config with existing protect params."""
     return _build_xray_hybrid_config(node, routing, settings, protect_port, protect_password, api_port)
+
+
+def build_singbox_outbound(node: Node, *, tag: str = "proxy") -> dict[str, Any]:
+    """Convert a stored node outbound into a native sing-box outbound."""
+    protocol = str((node.outbound or {}).get("protocol") or "").lower()
+    if protocol not in _SUPPORTED_NATIVE_PROTOCOLS:
+        raise ValueError(f"Текущий сервер нельзя конвертировать в native sing-box outbound: protocol `{protocol or 'unknown'}`")
+
+    outbound = _convert_outbound(deepcopy(node.outbound))
+    unsupported_transport = str(outbound.pop("_unsupported_transport", "") or "").strip()
+    if unsupported_transport:
+        raise ValueError(
+            f"Текущий сервер нельзя конвертировать в native sing-box outbound: transport `{unsupported_transport}` не поддерживается"
+        )
+
+    outbound["tag"] = tag
+    return outbound
 
 
 # ---------------------------------------------------------------------------
@@ -190,6 +208,9 @@ def _build_hybrid_singbox_config(
     if routing.bypass_lan:
         route_rules.append({"ip_is_private": True, "outbound": "direct"})
 
+    # Process rules
+    _append_process_rules(route_rules, routing)
+
     # Service routes
     for svc_id, action in routing.service_routes.items():
         preset = SERVICE_PRESETS_BY_ID.get(svc_id)
@@ -200,9 +221,6 @@ def _build_hybrid_singbox_config(
     _append_singbox_rules(route_rules, routing.direct_domains, "direct")
     _append_singbox_rules(route_rules, routing.block_domains, "block")
     _append_singbox_rules(route_rules, routing.proxy_domains, "proxy")
-
-    # Process rules
-    _append_process_rules(route_rules, routing)
 
     final_outbound = _resolve_tun_final_outbound(routing)
 
@@ -341,8 +359,7 @@ def _build_native_config(
     routing: RoutingSettings,
     settings: AppSettings,
 ) -> TunConfigBundle:
-    proxy_outbound = _convert_outbound(deepcopy(node.outbound))
-    proxy_outbound["tag"] = "proxy"
+    proxy_outbound = build_singbox_outbound(node, tag="proxy")
     proxy_outbound["domain_resolver"] = "proxy-dns"
 
     direct_out: dict[str, Any] = {"type": "direct", "tag": "direct", "domain_resolver": "bootstrap-dns"}
@@ -542,6 +559,8 @@ def _build_route_rules(routing: RoutingSettings, node: Node, settings: AppSettin
     if routing.bypass_lan:
         rules.append({"ip_is_private": True, "outbound": "direct"})
 
+    _append_process_rules(rules, routing)
+
     # Service routes
     for svc_id, action in routing.service_routes.items():
         preset = SERVICE_PRESETS_BY_ID.get(svc_id)
@@ -551,8 +570,6 @@ def _build_route_rules(routing: RoutingSettings, node: Node, settings: AppSettin
     _append_singbox_rules(rules, routing.direct_domains, "direct")
     _append_singbox_rules(rules, routing.block_domains, "block")
     _append_singbox_rules(rules, routing.proxy_domains, "proxy")
-
-    _append_process_rules(rules, routing)
 
     return rules
 

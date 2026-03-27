@@ -275,7 +275,6 @@ def main() -> int:
     from PyQt6.QtGui import QIcon
     from PyQt6.QtWidgets import QApplication, QSystemTrayIcon
     from qfluentwidgets import SplashScreen
-    from qframelesswindow import StandardTitleBar
 
     from xray_fluent.constants import APP_NAME
     from xray_fluent.ui.main_window import MainWindow
@@ -301,16 +300,13 @@ def main() -> int:
     splash = None
     if not start_hidden:
         _bootstrap_logger.info("Showing stock splash screen")
-        icon = QIcon(":/qfluentwidgets/images/logo.png")
-        splash = SplashScreen(icon, window)
-        title_bar = StandardTitleBar(splash)
-        title_bar.setIcon(window.windowIcon())
-        title_bar.setTitle(window.windowTitle())
-        splash.setTitleBar(title_bar)
+        splash = SplashScreen(window.windowIcon() or QIcon(":/qfluentwidgets/images/logo.png"), window)
         sz = splash.iconSize()
         scale = max(1, window.logicalDpiX() // 96)
         splash.setIconSize(QSize(sz.width() * scale, sz.height() * scale))
         window.show()
+        splash.resize(window.size())
+        splash.raise_()
         app.processEvents()
         _bootstrap_logger.info("Initializing main window behind splash")
         window.initialize()

@@ -5,7 +5,7 @@ import os
 import re
 from pathlib import Path
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QFileDialog,
@@ -106,6 +106,10 @@ class RoutingPage(QWidget):
         self.setObjectName("routing")
         self._loading = False
         self._apply_pending = False
+        self._apply_timer = QTimer(self)
+        self._apply_timer.setSingleShot(True)
+        self._apply_timer.setInterval(1500)
+        self._apply_timer.timeout.connect(self._emit_apply)
 
         # --- Outer layout with scroll area ---
         outer = QVBoxLayout(self)
@@ -197,58 +201,11 @@ class RoutingPage(QWidget):
 
         root.addLayout(header)
 
-        # --- Services section ---
-        self._services_group = SettingCardGroup("Сервисы", container)
-        self._service_cards: dict[str, _ServiceRouteCard] = {}
-
-        for preset in SERVICE_PRESETS:
-            card = _ServiceRouteCard(
-                preset.icon,
-                preset.name,
-                preset.description,
-                parent=self._services_group,
-            )
-            card.changed.connect(self._schedule_apply)
-            self._services_group.addSettingCard(card)
-            self._service_cards[preset.id] = card
-
-        root.addWidget(self._services_group)
-
-        # --- Rules table ---
-        root.addWidget(SubtitleLabel("Правила маршрутизации", container))
-
-        rules_toolbar = QHBoxLayout()
-        self.add_rule_btn = PrimaryToolButton(FIF.ADD, container)
-        self.add_rule_btn.setToolTip("Добавить правило")
-        rules_toolbar.addWidget(self.add_rule_btn)
-
-        self.del_rule_btn = TransparentToolButton(FIF.DELETE, container)
-        self.del_rule_btn.setToolTip("Удалить выбранные")
-        rules_toolbar.addWidget(self.del_rule_btn)
-
-        rules_toolbar.addSpacing(16)
-
-        self.import_btn = TransparentToolButton(FIF.DOWNLOAD, container)
-        self.import_btn.setToolTip("Импорт из файла")
-        rules_toolbar.addWidget(self.import_btn)
-
-        self.export_btn = TransparentToolButton(FIF.SHARE, container)
-        self.export_btn.setToolTip("Экспорт в файл")
-        rules_toolbar.addWidget(self.export_btn)
-
-        rules_toolbar.addStretch(1)
-        root.addLayout(rules_toolbar)
-
-        self.rules_table = TableWidget(container)
-        self.rules_table.setColumnCount(2)
-        self.rules_table.setHorizontalHeaderLabels(["Адрес", "Действие"])
-        self.rules_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.rules_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.rules_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.rules_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.rules_table.verticalHeader().setVisible(False)
-        self.rules_table.setMinimumHeight(180)
-        root.addWidget(self.rules_table)
+        self._priority_info = CaptionLabel(
+            "Приоритет применения: приложения и папки выше сервисов, сервисы выше доменных правил.",
+            container,
+        )
+        root.addWidget(self._priority_info)
 
         # --- Process routing section ---
         root.addWidget(SubtitleLabel("Маршрутизация по процессам", container))
@@ -344,6 +301,59 @@ class RoutingPage(QWidget):
         self.proxy_warning.setVisible(False)
         root.addWidget(self.proxy_warning)
 
+        # --- Services section ---
+        self._services_group = SettingCardGroup("Сервисы", container)
+        self._service_cards: dict[str, _ServiceRouteCard] = {}
+
+        for preset in SERVICE_PRESETS:
+            card = _ServiceRouteCard(
+                preset.icon,
+                preset.name,
+                preset.description,
+                parent=self._services_group,
+            )
+            card.changed.connect(self._schedule_apply)
+            self._services_group.addSettingCard(card)
+            self._service_cards[preset.id] = card
+
+        root.addWidget(self._services_group)
+
+        # --- Rules table ---
+        root.addWidget(SubtitleLabel("Доменные правила", container))
+
+        rules_toolbar = QHBoxLayout()
+        self.add_rule_btn = PrimaryToolButton(FIF.ADD, container)
+        self.add_rule_btn.setToolTip("Добавить правило")
+        rules_toolbar.addWidget(self.add_rule_btn)
+
+        self.del_rule_btn = TransparentToolButton(FIF.DELETE, container)
+        self.del_rule_btn.setToolTip("Удалить выбранные")
+        rules_toolbar.addWidget(self.del_rule_btn)
+
+        rules_toolbar.addSpacing(16)
+
+        self.import_btn = TransparentToolButton(FIF.DOWNLOAD, container)
+        self.import_btn.setToolTip("Импорт из файла")
+        rules_toolbar.addWidget(self.import_btn)
+
+        self.export_btn = TransparentToolButton(FIF.SHARE, container)
+        self.export_btn.setToolTip("Экспорт в файл")
+        rules_toolbar.addWidget(self.export_btn)
+
+        rules_toolbar.addStretch(1)
+        root.addLayout(rules_toolbar)
+
+        self.rules_table = TableWidget(container)
+        self.rules_table.setColumnCount(2)
+        self.rules_table.setHorizontalHeaderLabels(["Адрес", "Действие"])
+        self.rules_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.rules_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        self.rules_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.rules_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.rules_table.verticalHeader().setVisible(False)
+        self.rules_table.setMinimumHeight(180)
+        root.addWidget(self.rules_table)
+
         root.addStretch(1)
 
         # --- Signals ---
@@ -370,6 +380,7 @@ class RoutingPage(QWidget):
     def _schedule_apply(self) -> None:
         if not self._loading:
             self._set_apply_pending(True)
+            self._apply_timer.start()
 
     # --- Public API ---
 
@@ -731,6 +742,8 @@ class RoutingPage(QWidget):
 
     def _set_apply_pending(self, pending: bool) -> None:
         self._apply_pending = pending
+        if not pending and self._apply_timer.isActive():
+            self._apply_timer.stop()
         self._apply_pending_label.setVisible(pending)
         self.apply_routing_btn.setEnabled(pending)
 

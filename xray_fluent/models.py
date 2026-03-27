@@ -187,6 +187,7 @@ class AppSettings:
     tun_mode: bool = False
     tun_engine: str = "singbox"  # "singbox" | "tun2socks"
     singbox_path: str = ""
+    singbox_config_file: str = ""
     window_width: int = 1000
     window_height: int = 720
     window_x: int = -1
@@ -221,6 +222,7 @@ class AppSettings:
             "tun_mode": self.tun_mode,
             "tun_engine": self.tun_engine,
             "singbox_path": self.singbox_path,
+            "singbox_config_file": self.singbox_config_file,
             "window_width": self.window_width,
             "window_height": self.window_height,
             "window_x": self.window_x,
@@ -257,6 +259,7 @@ class AppSettings:
             tun_mode=bool(data.get("tun_mode", False)),
             tun_engine=str(data.get("tun_engine") or "singbox"),
             singbox_path=str(data.get("singbox_path") or ""),
+            singbox_config_file=str(data.get("singbox_config_file") or ""),
             window_width=int(data.get("window_width") or 1000),
             window_height=int(data.get("window_height") or 720),
             window_x=int(data.get("window_x", -1)),

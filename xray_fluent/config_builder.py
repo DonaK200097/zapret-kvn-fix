@@ -114,9 +114,17 @@ def build_xray_config(node: Node, routing: RoutingSettings, settings: AppSetting
             }
         )
 
-    _append_domain_ip_rule(routing_rules, routing.direct_domains, "direct")
-    _append_domain_ip_rule(routing_rules, routing.block_domains, "block")
-    _append_domain_ip_rule(routing_rules, routing.proxy_domains, "proxy")
+    if not settings.tun_mode:
+        for pr in routing.process_rules:
+            name = _resolve_xray_process_name(pr)
+            action = pr.get("action", "direct")
+            if name:
+                routing_rules.append({
+                    "type": "field",
+                    "process": [name],
+                    "network": "tcp,udp",
+                    "outboundTag": action if action in ("direct", "proxy", "block") else "direct",
+                })
 
     # Merge service preset domains
     service_direct: list[str] = []
@@ -135,18 +143,9 @@ def build_xray_config(node: Node, routing: RoutingSettings, settings: AppSetting
     _append_domain_ip_rule(routing_rules, service_proxy, "proxy")
     _append_domain_ip_rule(routing_rules, service_direct, "direct")
     _append_domain_ip_rule(routing_rules, service_block, "block")
-
-    if not settings.tun_mode:
-        for pr in routing.process_rules:
-            name = _resolve_xray_process_name(pr)
-            action = pr.get("action", "direct")
-            if name:
-                routing_rules.append({
-                    "type": "field",
-                    "process": [name],
-                    "network": "tcp,udp",
-                    "outboundTag": action if action in ("direct", "proxy", "block") else "direct",
-                })
+    _append_domain_ip_rule(routing_rules, routing.direct_domains, "direct")
+    _append_domain_ip_rule(routing_rules, routing.block_domains, "block")
+    _append_domain_ip_rule(routing_rules, routing.proxy_domains, "proxy")
 
     mode = routing.mode
 

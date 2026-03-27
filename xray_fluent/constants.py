@@ -28,6 +28,8 @@ def get_base_dir() -> Path:
 
 BASE_DIR = get_base_dir()
 DATA_DIR = BASE_DIR / "data"
+TEMPLATES_DIR = DATA_DIR / "templates"
+SINGBOX_TEMPLATES_DIR = TEMPLATES_DIR / "sing-box"
 RUNTIME_DIR = DATA_DIR / "runtime"
 LOG_DIR = DATA_DIR / "logs"
 STATE_FILE = DATA_DIR / "state.enc"
@@ -35,6 +37,7 @@ XRAY_CONFIG_FILE = RUNTIME_DIR / "xray_config.json"
 XRAY_PATH_DEFAULT = BASE_DIR / "core" / "xray.exe"
 
 SINGBOX_CONFIG_FILE = RUNTIME_DIR / "singbox_config.json"
+SINGBOX_DEFAULT_CONFIG_NAME = "default.json"
 SINGBOX_PATH_DEFAULT = BASE_DIR / "core" / "sing-box.exe"
 SINGBOX_CLASH_API_PORT = 19090
 

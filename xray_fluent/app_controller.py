@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 import socket
 import time
@@ -8,14 +9,23 @@ from datetime import datetime, timezone
 import json
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 from PyQt6.QtCore import QObject, QTimer, pyqtSignal
 
 from .country_flags import CountryResolver, detect_country
 from .config_builder import build_xray_config
-from .singbox_config_builder import build_singbox_config, build_xray_hybrid_config, needs_xray_hybrid, TunConfigBundle
+from .singbox_config_builder import build_singbox_outbound
 from .connectivity_test import ConnectivityTestWorker
-from .constants import APP_NAME, LOG_DIR, ROUTING_MODES, SINGBOX_CLASH_API_PORT, DEFAULT_XRAY_STATS_API_PORT
+from .constants import (
+    APP_NAME,
+    DEFAULT_XRAY_STATS_API_PORT,
+    LOG_DIR,
+    ROUTING_MODES,
+    SINGBOX_CLASH_API_PORT,
+    SINGBOX_DEFAULT_CONFIG_NAME,
+    SINGBOX_TEMPLATES_DIR,
+)
 from .diagnostics import export_diagnostics
 from .link_parser import parse_links_text
 from .live_metrics_worker import LiveMetricsWorker
@@ -73,6 +83,14 @@ class ActiveSessionSnapshot:
     api_port: int
     protect_ss_port: int
     protect_ss_password: str
+
+
+@dataclass(slots=True)
+class SingboxRuntimeConfig:
+    config: dict[str, Any]
+    source_path: Path
+    has_proxy_outbound: bool
+    used_selected_node: bool
 
 
 class AppController(QObject):
@@ -258,6 +276,210 @@ class AppController(QObject):
         routing = routing or self.state.routing
         return self._signature(routing.to_dict())
 
+    def is_singbox_editor_mode(self, settings: AppSettings | None = None) -> bool:
+        settings = settings or self.state.settings
+        return bool(settings.tun_mode and str(settings.tun_engine) == "singbox")
+
+    def _can_connect_without_selected_node(self, settings: AppSettings | None = None) -> bool:
+        return self.is_singbox_editor_mode(settings)
+
+    def get_singbox_config_dir(self) -> Path:
+        SINGBOX_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
+        return SINGBOX_TEMPLATES_DIR
+
+    def _normalize_singbox_config_relative_path(self, value: str | Path | None) -> str:
+        raw = str(value or "").strip().replace("\\", "/")
+        if not raw:
+            return SINGBOX_DEFAULT_CONFIG_NAME
+
+        parts = [part for part in Path(raw).parts if part not in ("", ".", "..", "/")]
+        relative = Path(*parts) if parts else Path(SINGBOX_DEFAULT_CONFIG_NAME)
+        if not relative.suffix:
+            relative = relative.with_suffix(".json")
+        return relative.as_posix()
+
+    def _resolve_singbox_config_path(self, path: str | Path | None = None) -> Path:
+        base_dir = self.get_singbox_config_dir().resolve()
+        if path is None or not str(path).strip():
+            relative = Path(self._normalize_singbox_config_relative_path(self.state.settings.singbox_config_file))
+            resolved = (base_dir / relative).resolve()
+        else:
+            candidate = Path(path)
+            if candidate.is_absolute():
+                resolved = candidate.resolve()
+            else:
+                resolved = (base_dir / self._normalize_singbox_config_relative_path(candidate)).resolve()
+
+        if not resolved.suffix:
+            resolved = resolved.with_suffix(".json")
+
+        try:
+            resolved.relative_to(base_dir)
+        except ValueError as exc:
+            raise ValueError("Файл sing-box должен находиться в data/templates/sing-box/") from exc
+
+        return resolved
+
+    def _set_active_singbox_config_path(self, path: Path, *, emit_signal: bool = True) -> Path:
+        resolved = self._resolve_singbox_config_path(path)
+        relative = resolved.relative_to(self.get_singbox_config_dir().resolve()).as_posix()
+        if self.state.settings.singbox_config_file == relative:
+            return resolved
+        self.state.settings.singbox_config_file = relative
+        if emit_signal:
+            self.settings_changed.emit(self.state.settings)
+        self.schedule_save()
+        return resolved
+
+    @staticmethod
+    def _default_singbox_config_text() -> str:
+        payload = {
+            "log": {"level": "warn", "timestamp": True},
+            "inbounds": [
+                {
+                    "type": "tun",
+                    "tag": "tun-in",
+                    "interface_name": "xftun",
+                    "address": ["172.19.0.1/30"],
+                    "auto_route": True,
+                    "strict_route": False,
+                    "stack": "mixed",
+                }
+            ],
+            "outbounds": [
+                {
+                    "type": "direct",
+                    "tag": "proxy",
+                },
+                {
+                    "type": "direct",
+                    "tag": "direct",
+                },
+                {
+                    "type": "block",
+                    "tag": "block",
+                },
+            ],
+            "route": {
+                "final": "proxy",
+            },
+        }
+        return json.dumps(payload, ensure_ascii=True, indent=2) + "\n"
+
+    def get_active_singbox_config_path(self) -> Path:
+        return self._resolve_singbox_config_path()
+
+    def get_active_singbox_config_name(self) -> str:
+        return self.get_active_singbox_config_path().name
+
+    def _ensure_active_singbox_config(self, path: str | Path | None = None) -> Path:
+        resolved = self._resolve_singbox_config_path(path)
+        resolved.parent.mkdir(parents=True, exist_ok=True)
+        if not resolved.exists():
+            resolved.write_text(self._default_singbox_config_text(), encoding="utf-8")
+        self._set_active_singbox_config_path(resolved)
+        return resolved
+
+    def load_active_singbox_config_text(self) -> tuple[Path, str]:
+        path = self._ensure_active_singbox_config()
+        return path, path.read_text(encoding="utf-8")
+
+    def load_singbox_config_text(self, path: str | Path) -> tuple[Path, str]:
+        resolved = self._resolve_singbox_config_path(path)
+        if not resolved.exists():
+            raise FileNotFoundError(f"Файл не найден: {resolved.name}")
+        self._set_active_singbox_config_path(resolved)
+        return resolved, resolved.read_text(encoding="utf-8")
+
+    def save_singbox_config_text(self, text: str, path: str | Path | None = None) -> Path:
+        resolved = self._ensure_active_singbox_config(path)
+        resolved.write_text(text, encoding="utf-8")
+        self._set_active_singbox_config_path(resolved)
+        return resolved
+
+    @staticmethod
+    def _format_json_error_message(text: str, exc: json.JSONDecodeError) -> str:
+        lines = text.splitlines()
+        line = lines[exc.lineno - 1] if 0 < exc.lineno <= len(lines) else ""
+        caret = ""
+        if line:
+            caret = "\n" + (" " * max(0, exc.colno - 1)) + "^"
+        return f"Ошибка синтаксиса JSON: {exc.msg} (строка {exc.lineno}, столбец {exc.colno})\n{line}{caret}".rstrip()
+
+    def validate_singbox_json_text(self, text: str) -> tuple[bool, str]:
+        try:
+            json.loads(text)
+        except json.JSONDecodeError as exc:
+            return False, self._format_json_error_message(text, exc)
+        return True, "JSON корректен."
+
+    def apply_singbox_config_text(self, text: str) -> tuple[bool, Path | None, str]:
+        ok, message = self.validate_singbox_json_text(text)
+        if not ok:
+            return False, None, message
+
+        path = self.save_singbox_config_text(text)
+        if self._active_core == "singbox" or (self.is_singbox_editor_mode() and (self.connected or self._desired_connected)):
+            self._desired_connected = True
+            self._request_transition("sing-box config applied")
+            return True, path, "Конфиг сохранён. Применяю изменения sing-box..."
+
+        return True, path, "Конфиг сохранён. Он будет использован при следующем запуске sing-box."
+
+    @staticmethod
+    def _config_has_proxy_outbound(payload: Any) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        outbounds = payload.get("outbounds")
+        if not isinstance(outbounds, list):
+            return False
+        return any(isinstance(outbound, dict) and outbound.get("tag") == "proxy" for outbound in outbounds)
+
+    def _inspect_active_singbox_config(self) -> tuple[Path, str, bool]:
+        path, text = self.load_active_singbox_config_text()
+        text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        has_proxy_outbound = False
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError:
+            payload = None
+        if payload is not None:
+            has_proxy_outbound = self._config_has_proxy_outbound(payload)
+        return path, text_hash, has_proxy_outbound
+
+    def _build_runtime_singbox_config(self, node: Node | None = None) -> SingboxRuntimeConfig:
+        source_path, text = self.load_active_singbox_config_text()
+        try:
+            payload = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise ValueError(f"{source_path.name}: {self._format_json_error_message(text, exc)}") from exc
+
+        if not isinstance(payload, dict):
+            raise ValueError("Корень sing-box config должен быть JSON-объектом.")
+
+        outbounds = payload.get("outbounds")
+        has_proxy_outbound = False
+        used_selected_node = False
+        if isinstance(outbounds, list):
+            for index, outbound in enumerate(outbounds):
+                if not isinstance(outbound, dict) or outbound.get("tag") != "proxy":
+                    continue
+                has_proxy_outbound = True
+                if node is not None:
+                    try:
+                        outbounds[index] = build_singbox_outbound(node, tag="proxy")
+                    except ValueError as exc:
+                        raise ValueError(f"Не удалось заменить outbound tag `proxy`: {exc}") from exc
+                    used_selected_node = True
+                break
+
+        return SingboxRuntimeConfig(
+            config=payload,
+            source_path=source_path,
+            has_proxy_outbound=has_proxy_outbound,
+            used_selected_node=used_selected_node,
+        )
+
     def _transition_signature(
         self,
         node: Node | None = None,
@@ -267,6 +489,19 @@ class AppController(QObject):
         settings = settings or self.state.settings
         routing = routing or self.state.routing
         node = node or self.selected_node
+        if self.is_singbox_editor_mode(settings):
+            source_path, config_hash, has_proxy_outbound = self._inspect_active_singbox_config()
+            return self._signature(
+                {
+                    "mode": "singbox-editor",
+                    "singbox_path": str(settings.singbox_path),
+                    "config_file": str(source_path.name),
+                    "config_hash": config_hash,
+                    "has_proxy_outbound": has_proxy_outbound,
+                    "node_id": node.id if has_proxy_outbound and node else None,
+                    "node_outbound": node.outbound if has_proxy_outbound and node else None,
+                }
+            )
         return self._signature(
             {
                 "node_id": node.id if node else None,
@@ -314,21 +549,14 @@ class AppController(QObject):
         node = node or self.selected_node
         if not settings.tun_mode:
             return ""
+        if self.is_singbox_editor_mode(settings):
+            return self._transition_signature(node, settings, routing)
         if settings.tun_engine == "tun2socks":
             return self._signature(
                 {
                     "mode": "tun2socks",
                     "server": node.server if node else "",
                     "socks_port": int(settings.socks_port),
-                }
-            )
-        if node is not None and needs_xray_hybrid(node):
-            return self._signature(
-                {
-                    "mode": "singbox-hybrid",
-                    "routing": routing.to_dict(),
-                    "xray_path": str(settings.xray_path),
-                    "singbox_path": str(settings.singbox_path),
                 }
             )
         return self._signature(
@@ -344,7 +572,7 @@ class AppController(QObject):
 
     def _capture_active_session(
         self,
-        node: Node,
+        node: Node | None,
         *,
         tun: bool,
         core: str,
@@ -354,10 +582,10 @@ class AppController(QObject):
     ) -> None:
         settings = self.state.settings
         routing = self.state.routing
-        hybrid = bool(tun and core == "singbox" and needs_xray_hybrid(node))
+        hybrid = False
         self._active_session = ActiveSessionSnapshot(
-            node_id=node.id,
-            node_server=node.server,
+            node_id=node.id if node else None,
+            node_server=node.server if node else "",
             active_core=core,
             tun_mode=bool(tun),
             tun_engine=str(settings.tun_engine),
@@ -414,7 +642,9 @@ class AppController(QObject):
     def _needs_transition(self) -> bool:
         if self._desired_connected:
             node = self.selected_node
-            if node is None or self.locked:
+            if self.locked:
+                return False
+            if node is None and not self._can_connect_without_selected_node():
                 return False
             signature = self._transition_signature(node)
             if signature == self._blocked_transition_signature:
@@ -446,31 +676,27 @@ class AppController(QObject):
     def _can_tun_hot_swap(self, session: ActiveSessionSnapshot) -> bool:
         settings = self.state.settings
         node = self.selected_node
-        if node is None or not settings.tun_mode or not session.tun_mode:
+        if not settings.tun_mode or not session.tun_mode:
             return False
         if session.tun_engine != str(settings.tun_engine):
             return False
         if session.active_core == "tun2socks":
+            if node is None:
+                return False
             if settings.tun_engine != "tun2socks":
                 return False
             return session.tun_layer_signature == self._tun_layer_signature(node, settings, self.state.routing)
 
-        if session.active_core != "singbox" or settings.tun_engine != "singbox":
-            return False
-        if not session.hybrid or not needs_xray_hybrid(node):
-            return False
-        if session.protect_ss_port <= 0 or not session.protect_ss_password:
-            return False
-        return session.tun_layer_signature == self._tun_layer_signature(node, settings, self.state.routing)
+        return False
 
     def _compute_transition_action(self) -> str | None:
         if not self._desired_connected:
             return "disconnect" if self.connected else None
 
         node = self.selected_node
-        if node is None:
-            return None
         if self.locked:
+            return None
+        if node is None and not self._can_connect_without_selected_node():
             return None
         if not self.connected or self._active_session is None:
             return "connect"
@@ -814,10 +1040,8 @@ class AppController(QObject):
             self.status.emit(level, message)
 
     def _compute_connected_state(self) -> bool:
-        node = self.selected_node
         if self._active_core == "singbox":
-            hybrid_needed = needs_xray_hybrid(node) if node is not None else False
-            return self.singbox.is_running and (self.xray.is_running if hybrid_needed else True)
+            return self.singbox.is_running
         if self._active_core == "tun2socks":
             return self.tun2socks.is_running and self.xray.is_running
         return self.xray.is_running
@@ -926,7 +1150,8 @@ class AppController(QObject):
                 return False
 
             node = self.selected_node
-            if not node:
+            singbox_editor_mode = self.is_singbox_editor_mode()
+            if node is None and not self._can_connect_without_selected_node():
                 self._set_connection_status("error", "Сначала выберите сервер.", level="warning")
                 return False
 
@@ -935,20 +1160,24 @@ class AppController(QObject):
                 reset_cycle=not self._auto_switch_transitioning,
             )
 
-            try:
-                self._xray_api_port = _find_free_api_port(
-                    excluded={self.state.settings.socks_port, self.state.settings.http_port},
-                )
-            except RuntimeError:
-                self._set_connection_status("error", "Не удалось найти свободный порт для API Xray", level="error")
-                return False
-
             prev_active_core = self._active_core
             tun = self.state.settings.tun_mode
+            self._xray_api_port = 0
+            if not singbox_editor_mode:
+                try:
+                    self._xray_api_port = _find_free_api_port(
+                        excluded={self.state.settings.socks_port, self.state.settings.http_port},
+                    )
+                except RuntimeError:
+                    self._set_connection_status("error", "Не удалось найти свободный порт для API Xray", level="error")
+                    return False
+
+            runtime_singbox: SingboxRuntimeConfig | None = None
+            session_label = node.name if node else self.get_active_singbox_config_name()
 
             if tun:
                 self._log(f"[tun] attempting TUN connect, admin={_is_admin()}")
-                self._set_connection_status("starting", f"Запуск VPN: {node.name}...", level="info")
+                self._set_connection_status("starting", f"Запуск VPN: {session_label}...", level="info")
 
                 if not _is_admin():
                     self._log("[tun] NOT admin — aborting")
@@ -967,27 +1196,25 @@ class AppController(QObject):
                 engine = self.state.settings.tun_engine
 
                 if engine == "singbox":
-                    # --- sing-box TUN (experimental, supports process routing) ---
-                    self._active_core = "singbox"  # Set early so metrics worker gets correct mode
-                    bundle = build_singbox_config(node, self.state.routing, self.state.settings, api_port=self._xray_api_port)
+                    self._active_core = "singbox"
+                    try:
+                        runtime_singbox = self._build_runtime_singbox_config(node)
+                    except ValueError as exc:
+                        self._active_core = prev_active_core
+                        self._set_connection_status("error", str(exc), level="error")
+                        return False
 
-                    if bundle.is_hybrid:
-                        self._set_connection_status("starting", "Запуск Xray (dialerProxy)...", level="info")
-                        xray_cfg = bundle.xray_config
-                        xray_cfg["log"] = {"loglevel": "error"}
-                        xray_ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
-                        if not xray_ok:
-                            self._log("[tun] xray start failed")
-                            self._active_core = prev_active_core
-                            return False
-                        self._set_connection_status("starting", "Xray запущен. Создание TUN адаптера...", level="info")
+                    session_label = runtime_singbox.source_path.name
+                    if runtime_singbox.used_selected_node and node is not None:
+                        session_label = f"{runtime_singbox.source_path.name} / {node.name}"
+                    self._set_connection_status("starting", f"Запуск VPN: {session_label}...", level="info")
+                    self._log(f"[tun] starting sing-box TUN from {runtime_singbox.source_path}")
+                    if runtime_singbox.used_selected_node and node is not None:
+                        self._log(f"[tun] outbound tag 'proxy' replaced from selected node: {node.name}")
 
-                    self._log(f"[tun] starting sing-box TUN (hybrid={bundle.is_hybrid})")
-                    sb_ok = self.singbox.start(self.state.settings.singbox_path, bundle.singbox_config)
+                    sb_ok = self.singbox.start(self.state.settings.singbox_path, runtime_singbox.config)
                     self._log(f"[tun] sing-box start result: {sb_ok}")
                     if not sb_ok:
-                        if bundle.is_hybrid:
-                            self.xray.stop()
                         self._set_connection_status(
                             "error",
                             "Не удалось создать TUN адаптер. Проверьте наличие wintun.dll в core/.",
@@ -995,8 +1222,8 @@ class AppController(QObject):
                         )
                         self._active_core = prev_active_core
                         return False
-                    self._protect_ss_port = bundle.protect_port
-                    self._protect_ss_password = bundle.protect_password
+                    self._protect_ss_port = 0
+                    self._protect_ss_password = ""
                 else:
                     # --- tun2socks TUN (stable, default) ---
                     self._active_core = "tun2socks"
@@ -1024,7 +1251,7 @@ class AppController(QObject):
                         return False
             else:
                 self._active_core = "xray"
-                self._set_connection_status("starting", f"Запуск прокси: {node.name}...", level="info")
+                self._set_connection_status("starting", f"Запуск прокси: {session_label}...", level="info")
                 config = build_xray_config(node, self.state.routing, self.state.settings, api_port=self._xray_api_port)
                 ok = self.xray.start(self.state.settings.xray_path, config)
                 if not ok:
@@ -1048,10 +1275,20 @@ class AppController(QObject):
                         self._active_core = prev_active_core
                         return False
 
-            node.last_used_at = datetime.now(timezone.utc).isoformat()
-            self._set_connection_status("running", f"Подключено: {node.name}" + (" (TUN)" if tun else ""), level="success")
+            session_node = node
+            if singbox_editor_mode and runtime_singbox is not None and not runtime_singbox.used_selected_node:
+                session_node = None
+
+            if session_node is not None:
+                session_node.last_used_at = datetime.now(timezone.utc).isoformat()
+
+            self._set_connection_status(
+                "running",
+                f"Подключено: {session_label}" + (" (TUN)" if tun else ""),
+                level="success",
+            )
             self._capture_active_session(
-                node,
+                session_node,
                 tun=tun,
                 core=self._active_core,
                 api_port=self._xray_api_port,
@@ -1059,8 +1296,7 @@ class AppController(QObject):
                 protect_ss_password=self._protect_ss_password,
             )
             self.save()
-            node_name = node.name if node else "unknown"
-            self._traffic_history.start_session(node_name, self._active_core)
+            self._traffic_history.start_session(session_label, self._active_core)
             return True
         finally:
             self._connecting = False
@@ -1189,6 +1425,8 @@ class AppController(QObject):
         self.schedule_save()
 
         if self.connected or self._desired_connected:
+            if self._active_core == "singbox" or self.is_singbox_editor_mode():
+                return
             self._request_transition("routing changed")
 
     def update_settings(self, settings: AppSettings) -> None:
@@ -1420,7 +1658,11 @@ class AppController(QObject):
         return export_diagnostics(output, self.state, self.recent_logs)
 
     def auto_connect_if_needed(self) -> None:
-        if self.state.settings.auto_connect_last and self.selected_node is not None and not self.locked:
+        if not self.state.settings.auto_connect_last or self.locked:
+            return
+        if self.selected_node is None and not self._can_connect_without_selected_node():
+            return
+        if self.selected_node is not None or self._can_connect_without_selected_node():
             self._desired_connected = True
             self._request_transition("auto connect")
 
@@ -1793,61 +2035,9 @@ class AppController(QObject):
                 else:
                     self._stop_metrics_worker()
 
-        # sing-box mode
-        hybrid_now = self.xray.is_running
-        hybrid_next = needs_xray_hybrid(node)
-
-        if hybrid_now != hybrid_next:
-            return self._reconnect(f"{reason} (mode change)")
-
-        if hybrid_next:
-            # Hybrid: restart only xray, sing-box TUN stays alive
-            self._switching = True
-            try:
-                self._log(f"[hot-swap] {reason} — restarting xray only, sing-box TUN stays up")
-                self._set_connection_status("starting", f"Переключение на {node.name}...", level="info")
-                self.xray.stop()
-                xray_cfg = build_xray_hybrid_config(
-                    node,
-                    self.state.routing,
-                    self.state.settings,
-                    session.protect_ss_port,
-                    session.protect_ss_password,
-                    api_port=session.api_port,
-                )
-                xray_cfg["log"] = {"loglevel": "error"}
-                ok = self.xray.start(self.state.settings.xray_path, xray_cfg)
-                if ok:
-                    node.last_used_at = datetime.now(timezone.utc).isoformat()
-                    self._capture_active_session(
-                        node,
-                        tun=True,
-                        core="singbox",
-                        api_port=session.api_port,
-                        protect_ss_port=session.protect_ss_port,
-                        protect_ss_password=session.protect_ss_password,
-                    )
-                    self._set_connection_status("running", f"Переключено: {node.name} (TUN)", level="success")
-                    self.save()
-                else:
-                    self._log("[hot-swap] xray restart failed")
-                    self._set_connection_status("error", "Не удалось переключить сервер, подключение остановлено", level="error")
-                    self._handle_unexpected_disconnect()
-                return ok
-            finally:
-                self._switching = False
-                self._auto_switch_transitioning = False
-                _, self.connected = self._refresh_connected_state()
-                self.connection_changed.emit(self.connected)
-                if self.connected:
-                    self._start_metrics_worker()
-                else:
-                    self._stop_metrics_worker()
-        else:
-            # Native: sing-box holds the outbound, must do full reconnect
-            return self._reconnect(f"{reason} (native mode)")
-
-        return False
+        # sing-box editor mode keeps the config in the editor file, so node
+        # changes are applied via a full reconnect when they matter.
+        return self._reconnect(f"{reason} (sing-box config change)")
 
     def _reconnect(self, reason: str) -> bool:
         if self._reconnecting:

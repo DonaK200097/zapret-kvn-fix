@@ -3,7 +3,15 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .constants import DATA_DIR, LOG_DIR, RUNTIME_DIR, SINGBOX_PATH_DEFAULT, STATE_FILE, XRAY_PATH_DEFAULT
+from .constants import (
+    DATA_DIR,
+    LOG_DIR,
+    RUNTIME_DIR,
+    SINGBOX_PATH_DEFAULT,
+    SINGBOX_TEMPLATES_DIR,
+    STATE_FILE,
+    XRAY_PATH_DEFAULT,
+)
 from .models import AppState
 from .path_utils import normalize_configured_path
 from .security import (
@@ -34,6 +42,7 @@ class StateStorage:
 
     def _ensure_dirs(self) -> None:
         DATA_DIR.mkdir(parents=True, exist_ok=True)
+        SINGBOX_TEMPLATES_DIR.mkdir(parents=True, exist_ok=True)
         RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
         LOG_DIR.mkdir(parents=True, exist_ok=True)
 
