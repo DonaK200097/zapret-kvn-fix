@@ -139,6 +139,7 @@ class AppController(QObject):
     ping_updated = pyqtSignal(str, object)
     speed_updated = pyqtSignal(str, object, bool)  # node_id, speed_mbps, is_alive
     speed_progress_updated = pyqtSignal(str, int)  # node_id, percent
+    speed_test_cancelled = pyqtSignal(int, int)  # completed, total
     connectivity_test_done = pyqtSignal(bool, str, object)
     live_metrics_updated = pyqtSignal(object)
     xray_update_result = pyqtSignal(object)
@@ -2634,17 +2635,17 @@ class AppController(QObject):
         self._ping_worker.completed.connect(self._on_ping_complete)
         self._ping_worker.start()
 
-    def speed_test_nodes(self, node_ids: set[str] | None = None) -> None:
+    def speed_test_nodes(self, node_ids: set[str] | None = None) -> bool:
         """Запуск теста скорости для указанных нод (или всех, если None)."""
         nodes = self.state.nodes
         if node_ids:
             nodes = [node for node in nodes if node.id in node_ids]
         if not nodes:
-            return
+            return False
 
         if self._speed_worker and self._speed_worker.isRunning():
-            self._speed_worker.cancel()
-            self._speed_worker.wait(3000)
+            self.status.emit("info", "Тест скорости уже выполняется. Остановите его перед новым запуском.")
+            return False
 
         from .path_utils import resolve_configured_path
         from .constants import XRAY_PATH_DEFAULT
@@ -2669,6 +2670,16 @@ class AppController(QObject):
         self._speed_worker.node_progress.connect(self._on_speed_node_progress)
         self._speed_worker.completed.connect(self._on_speed_complete)
         self._speed_worker.start()
+        return True
+
+    def cancel_speed_test(self) -> bool:
+        worker = self._speed_worker
+        if worker is None or not worker.isRunning():
+            self.status.emit("info", "Тест скорости сейчас не выполняется")
+            return False
+        worker.cancel()
+        self.status.emit("info", "Останавливаю тест скорости...")
+        return True
 
     def get_fastest_alive_node(self) -> Node | None:
         """Вернуть ноду с наибольшей скоростью среди живых, или лучшую по пингу."""
@@ -2919,6 +2930,7 @@ class AppController(QObject):
                 if len(node.speed_history) > 50:
                     node.speed_history = node.speed_history[-50:]
                 break
+        self.save()
         self.speed_updated.emit(node_id, speed_mbps, is_alive)
 
     def _on_speed_progress(self, current: int, total: int) -> None:
@@ -2935,10 +2947,18 @@ class AppController(QObject):
     def _on_speed_complete(self) -> None:
         if self.sender() is not self._speed_worker:
             return
-        self.bulk_task_progress.emit("speed", self._speed_completed, self._speed_total, True)
+        worker = self._speed_worker
+        cancelled = bool(worker.was_cancelled) if worker is not None else False
+        completed = worker.completed_nodes if worker is not None else self._speed_completed
+        self._speed_completed = completed
+        if cancelled:
+            self.speed_test_cancelled.emit(completed, self._speed_total)
+        self.bulk_task_progress.emit("speed", completed, self._speed_total, True)
         self._speed_worker = None
-        self.status.emit("success", "Тест скорости завершён")
-        self.save()
+        if cancelled:
+            self.status.emit("info", f"Тест скорости остановлен ({completed}/{self._speed_total})")
+        else:
+            self.status.emit("success", "Тест скорости завершён")
 
     def _on_connectivity_result(self, ok: bool, message: str, elapsed_ms: int | None) -> None:
         if self.sender() is not self._connectivity_worker:

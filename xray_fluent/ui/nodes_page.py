@@ -54,6 +54,7 @@ class NodesPage(QWidget):
     delete_requested = pyqtSignal(object)          # emits set[str] of node IDs
     ping_requested = pyqtSignal(object)             # emits set[str] or empty set
     speed_test_requested = pyqtSignal(object)       # emits set[str] of node IDs (or empty set for all)
+    cancel_speed_test_requested = pyqtSignal()
     export_outbound_json_requested = pyqtSignal(str)
     export_runtime_json_requested = pyqtSignal(str)
     selected_node_changed = pyqtSignal(str)
@@ -75,6 +76,8 @@ class NodesPage(QWidget):
         self._cached_tags: frozenset[str] = frozenset()
         self._pending_ping_ids: set[str] = set()
         self._active_speed_progress: dict[str, int] = {}
+        self._speed_test_running = False
+        self._speed_test_stopping = False
 
         # Stack: page 0 = server list, page 1 = node detail
         self._stack = QStackedWidget(self)
@@ -162,6 +165,11 @@ class NodesPage(QWidget):
         self.speed_test_all_btn.setToolTip("Тест скорости всех")
         toolbar.addWidget(self.speed_test_all_btn)
 
+        self.stop_speed_test_btn = TransparentToolButton(FIF.PAUSE_BOLD, self)
+        self.stop_speed_test_btn.setToolTip("Остановить тест скорости")
+        self.stop_speed_test_btn.setVisible(False)
+        toolbar.addWidget(self.stop_speed_test_btn)
+
         toolbar.addWidget(VerticalSeparator(self))
 
         self.export_outbound_btn = TransparentToolButton(FIF.SAVE_AS, self)
@@ -237,6 +245,7 @@ class NodesPage(QWidget):
         self._detail_widget.back_requested.connect(self._show_list)
         self._detail_widget.ping_node_requested.connect(lambda nid: self.ping_requested.emit({nid}))
         self._detail_widget.speed_test_node_requested.connect(lambda nid: self.speed_test_requested.emit({nid}))
+        self._detail_widget.cancel_speed_test_requested.connect(self.cancel_speed_test_requested.emit)
         self._stack.addWidget(self._detail_widget)
 
         # --- Search debounce ---
@@ -260,6 +269,7 @@ class NodesPage(QWidget):
         self.export_runtime_btn.clicked.connect(self._on_export_runtime)
         self.speed_test_btn.clicked.connect(self._on_speed_test_selected)
         self.speed_test_all_btn.clicked.connect(self._on_speed_test_all)
+        self.stop_speed_test_btn.clicked.connect(self.cancel_speed_test_requested.emit)
         self.delete_btn.clicked.connect(self._on_delete_selected)
         self.move_up_btn.clicked.connect(self._on_move_up)
         self.move_down_btn.clicked.connect(self._on_move_down)
@@ -401,6 +411,9 @@ class NodesPage(QWidget):
     def start_speed_activity(self) -> None:
         self._active_speed_progress.clear()
         self._table_model.clear_speed_busy()
+        self._speed_test_running = True
+        self._speed_test_stopping = False
+        self._sync_speed_test_controls()
         self._apply_activity_widgets()
 
     def update_speed_progress(self, node_id: str, percent: int) -> None:
@@ -416,16 +429,32 @@ class NodesPage(QWidget):
         self._apply_activity_widgets()
 
     def finish_speed_activity(self) -> None:
-        if not self._active_speed_progress:
-            return
         self._active_speed_progress.clear()
         self._table_model.clear_speed_busy()
+        self._speed_test_running = False
+        self._speed_test_stopping = False
+        self._sync_speed_test_controls()
         self._apply_activity_widgets()
+
+    def mark_speed_test_stopping(self) -> None:
+        if not self._speed_test_running:
+            return
+        self._speed_test_stopping = True
+        self._sync_speed_test_controls()
 
     def _apply_activity_widgets(self) -> None:
         for row, node_id in enumerate(self._visible_node_ids):
             self._sync_activity_widget(row, 6, node_id in self._pending_ping_ids)
             self._sync_speed_widget(row, node_id)
+
+    def _sync_speed_test_controls(self) -> None:
+        running = self._speed_test_running
+        stopping = self._speed_test_stopping
+        self.speed_test_btn.setEnabled(not running)
+        self.speed_test_all_btn.setEnabled(not running)
+        self.stop_speed_test_btn.setVisible(running)
+        self.stop_speed_test_btn.setEnabled(running and not stopping)
+        self._detail_widget.set_speed_test_running(running, stopping=stopping)
 
     def _sync_activity_widget(self, row: int, column: int, active: bool) -> None:
         index = self._table_model.index(row, column)

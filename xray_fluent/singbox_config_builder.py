@@ -279,8 +279,8 @@ def _build_xray_hybrid_config(
     cfg = build_xray_config(node, routing, settings, api_port=api_port)
 
     # Replace inbounds: internal SOCKS (for sing-box relay) + user proxy ports + API
-    socks_port = settings.socks_port or DEFAULT_SOCKS_PORT
-    http_port = settings.http_port or DEFAULT_HTTP_PORT
+    socks_port = DEFAULT_SOCKS_PORT
+    http_port = DEFAULT_HTTP_PORT
     cfg["inbounds"] = [
         {
             "tag": "socks-in",

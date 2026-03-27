@@ -50,42 +50,72 @@ class SpeedTestWorker(QThread):
         self._routing = routing or RoutingSettings()
         self._timeout = timeout
         self._cancelled = False
+        self._completed_nodes = 0
+        self._current_proc: subprocess.Popen | None = None
 
     def cancel(self) -> None:
         """Отмена тестирования."""
         self._cancelled = True
+        proc = self._current_proc
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+
+    @property
+    def completed_nodes(self) -> int:
+        return self._completed_nodes
+
+    @property
+    def was_cancelled(self) -> bool:
+        return self._cancelled
 
     # ------------------------------------------------------------------
 
     def run(self) -> None:
         total = len(self._nodes)
-        for i, node in enumerate(self._nodes):
-            if self._cancelled:
-                break
-            self.progress.emit(i + 1, total)
-            self.node_progress.emit(node.id, 0)
-            speed, alive = self._test_node(node)
-            self.node_progress.emit(node.id, 100)
-            self.result.emit(node.id, speed, alive)
-        self.completed.emit()
+        self._completed_nodes = 0
+        try:
+            for node in self._nodes:
+                if self._cancelled:
+                    break
+                self.node_progress.emit(node.id, 0)
+                finished, speed, alive = self._test_node(node)
+                if not finished:
+                    break
+                self._completed_nodes += 1
+                self.node_progress.emit(node.id, 100)
+                self.result.emit(node.id, speed, alive)
+                self.progress.emit(self._completed_nodes, total)
+        finally:
+            self.completed.emit()
 
     # ------------------------------------------------------------------
 
-    def _test_node(self, node: Node) -> tuple[float | None, bool]:
-        """Запускает временный xray, скачивает тестовый файл, возвращает (speed_mbps, is_alive)."""
+    def _test_node(self, node: Node) -> tuple[bool, float | None, bool]:
+        """Запускает временный xray, скачивает тестовый файл.
+
+        Возвращает кортеж (finished, speed_mbps, is_alive), где finished=False
+        означает ручную отмену текущего измерения и отсутствие результата для ноды.
+        """
         if not Path(self._xray_path).is_file():
-            return None, False
+            return True, None, False
 
         # Минимальные настройки для временного xray
         settings = AppSettings()
-        settings.socks_port = SPEED_TEST_TEMP_SOCKS_PORT
-        settings.http_port = SPEED_TEST_TEMP_HTTP_PORT
         settings.log_level = "none"
 
         try:
-            config = build_xray_config(node, self._routing, settings)
+            config = build_xray_config(
+                node,
+                self._routing,
+                settings,
+                socks_port=SPEED_TEST_TEMP_SOCKS_PORT,
+                http_port=SPEED_TEST_TEMP_HTTP_PORT,
+            )
         except Exception:
-            return None, False
+            return True, None, False
 
         # Убираем stats/api — для теста скорости не нужны
         config.pop("stats", None)
@@ -125,40 +155,48 @@ class SpeedTestWorker(QThread):
                 stderr=subprocess.DEVNULL,
                 creationflags=0x08000000,  # CREATE_NO_WINDOW
             )
+            self._current_proc = proc
 
             # Даём xray время на запуск (с проверкой отмены)
             for _ in range(10):
                 if self._cancelled:
-                    return None, False
+                    return False, None, False
                 self.node_progress.emit(node.id, 2 + _ * 2)
                 time.sleep(0.1)
 
             if proc.poll() is not None:
-                return None, False
+                if self._cancelled:
+                    return False, None, False
+                return True, None, False
 
             url = _get_speed_url(node.country_code)
             rounds = max(1, SPEED_TEST_ROUNDS)
             results: list[float] = []
             for round_index in range(rounds):
                 if self._cancelled:
-                    break
+                    return False, None, False
                 s = self._measure_speed(url, node.id, round_index, rounds)
+                if self._cancelled:
+                    return False, None, False
                 if s is not None and s > 0:
                     results.append(s)
 
             if not results:
-                return None, False
+                return True, None, False
 
             # Отбрасываем худший замер, берём среднее оставшихся
             if len(results) > 1:
                 results.sort()
                 results = results[1:]  # убираем самый медленный
             speed = round(sum(results) / len(results), 2)
-            return speed, True
+            return True, speed, True
 
         except Exception:
-            return None, False
+            if self._cancelled:
+                return False, None, False
+            return True, None, False
         finally:
+            self._current_proc = None
             if proc and proc.poll() is None:
                 proc.terminate()
                 try:

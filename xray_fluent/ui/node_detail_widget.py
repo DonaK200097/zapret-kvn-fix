@@ -31,6 +31,7 @@ class NodeDetailWidget(QWidget):
     back_requested = pyqtSignal()
     ping_node_requested = pyqtSignal(str)       # node_id
     speed_test_node_requested = pyqtSignal(str)  # node_id
+    cancel_speed_test_requested = pyqtSignal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -66,6 +67,11 @@ class NodeDetailWidget(QWidget):
         self.speed_btn.setToolTip("Тест скорости")
         self.speed_btn.clicked.connect(self._speed_test)
         top.addWidget(self.speed_btn)
+        self.stop_speed_btn = TransparentToolButton(FIF.PAUSE_BOLD, self)
+        self.stop_speed_btn.setToolTip("Остановить тест скорости")
+        self.stop_speed_btn.clicked.connect(self.cancel_speed_test_requested.emit)
+        self.stop_speed_btn.setVisible(False)
+        top.addWidget(self.stop_speed_btn)
         root.addLayout(top)
 
         # Info card
@@ -130,6 +136,11 @@ class NodeDetailWidget(QWidget):
         """Refresh display with latest data (call after ping/speed update)."""
         if self._node:
             self._refresh()
+
+    def set_speed_test_running(self, running: bool, *, stopping: bool = False) -> None:
+        self.speed_btn.setEnabled(not running)
+        self.stop_speed_btn.setVisible(running)
+        self.stop_speed_btn.setEnabled(running and not stopping)
 
     def _refresh(self) -> None:
         node = self._node

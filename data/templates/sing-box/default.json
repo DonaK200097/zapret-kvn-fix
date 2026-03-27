@@ -55,6 +55,13 @@
       },
       {
         "process_name": [
+          "Telegram.exe",
+          "AyuGram.exe"
+        ],
+        "outbound": "proxy"
+      },
+      {
+        "process_name": [
           "chrome.exe",
           "firefox.exe",
           "waterfox.exe",

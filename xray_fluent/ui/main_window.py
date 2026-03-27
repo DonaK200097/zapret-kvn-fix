@@ -45,6 +45,7 @@ class MainWindow(FluentWindow):
         self._initialized = False
         self._bulk_task_tip: InfoBar | None = None
         self._bulk_task_type: str | None = None
+        self._speed_test_was_cancelled = False
         self._tray_available = QSystemTrayIcon.isSystemTrayAvailable()
         self._deferred_dashboard_metrics: tuple[float, float, int | None] | None = None
         self._deferred_process_stats: list | None = None
@@ -229,7 +230,9 @@ class MainWindow(FluentWindow):
 
         # Тест скорости
         self.nodes_page.speed_test_requested.connect(self._speed_test_requested)
+        self.nodes_page.cancel_speed_test_requested.connect(self._cancel_speed_test_requested)
         self.controller.speed_updated.connect(self._on_speed_updated)
+        self.controller.speed_test_cancelled.connect(self._on_speed_test_cancelled)
 
         self.controller.nodes_changed.connect(self._on_nodes_changed)
         self.controller.selection_changed.connect(self._on_selection_changed)
@@ -407,7 +410,11 @@ class MainWindow(FluentWindow):
             else:
                 self.nodes_page.finish_speed_activity()
             if self._bulk_task_tip and self._bulk_task_type == task:
-                self._set_bulk_task_tip_content(f"Завершено {current}/{total}")
+                if task == "speed" and self._speed_test_was_cancelled:
+                    self._set_bulk_task_tip_content(f"Остановлено {current}/{total}")
+                    self._speed_test_was_cancelled = False
+                else:
+                    self._set_bulk_task_tip_content(f"Завершено {current}/{total}")
                 QTimer.singleShot(1000, self._clear_bulk_task_tip)
             return
 
@@ -487,11 +494,19 @@ class MainWindow(FluentWindow):
             self.controller.ping_nodes(None)
 
     def _speed_test_requested(self, ids: set[str]) -> None:
-        self.nodes_page.start_speed_activity()
-        if ids:
-            self.controller.speed_test_nodes(ids)
-        else:
-            self.controller.speed_test_nodes(None)
+        started = self.controller.speed_test_nodes(ids or None)
+        if started:
+            self._speed_test_was_cancelled = False
+            self.nodes_page.start_speed_activity()
+
+    def _cancel_speed_test_requested(self) -> None:
+        if self.controller.cancel_speed_test():
+            self.nodes_page.mark_speed_test_stopping()
+            if self._bulk_task_tip and self._bulk_task_type == "speed":
+                self._set_bulk_task_tip_content("Останавливаю...")
+
+    def _on_speed_test_cancelled(self, _completed: int, _total: int) -> None:
+        self._speed_test_was_cancelled = True
 
     def _on_speed_progress_updated(self, node_id: str, percent: int) -> None:
         self.nodes_page.update_speed_progress(node_id, percent)

@@ -74,6 +74,8 @@
       {
         "type": "field",
         "process": [
+          "Telegram.exe",
+          "AyuGram.exe",
           "Discord.exe",
           "Vesktop.exe",
           "Spotify.exe"

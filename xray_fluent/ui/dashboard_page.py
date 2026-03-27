@@ -84,6 +84,8 @@ class DashboardPage(QWidget):
         self._routing = RoutingSettings()
         self._selected_latency_ms: int | None = None
         self._live_rtt_ms: int | None = None
+        self._proxy_socks_port = 0
+        self._proxy_http_port = 0
         self._transition_busy = False
         self._last_down_bps = 0.0
         self._last_up_bps = 0.0
@@ -451,8 +453,8 @@ class DashboardPage(QWidget):
         self._refresh_dashboard()
 
     def set_proxy_ports(self, socks_port: int, http_port: int) -> None:
-        self._settings.socks_port = socks_port
-        self._settings.http_port = http_port
+        self._proxy_socks_port = max(0, int(socks_port))
+        self._proxy_http_port = max(0, int(http_port))
         self._settings.tun_mode = False
         if self._connection_phase in {"idle", "running"}:
             self._connection_message = self._default_connection_message()
