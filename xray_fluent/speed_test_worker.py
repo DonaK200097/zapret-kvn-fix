@@ -14,42 +14,19 @@ from PyQt6.QtCore import QThread, pyqtSignal
 from .config_builder import build_xray_config
 from .constants import (
     PROXY_HOST,
+    SPEED_TEST_DEFAULT_URL,
     SPEED_TEST_ROUNDS,
     SPEED_TEST_TEMP_HTTP_PORT,
     SPEED_TEST_TEMP_SOCKS_PORT,
     SPEED_TEST_TIMEOUT,
-    SPEED_TEST_URL,
+    SPEED_TEST_URLS_BY_COUNTRY,
 )
 from .http_utils import build_opener
 from .models import AppSettings, Node, RoutingSettings
 
-# Гео-маппинг: код страны → URL тестового файла из ближайшего ЦОД
-_GEO_SPEED_URLS: dict[str, str] = {
-    "nl": "https://ams.download.datapacket.com/100mb.bin",
-    "de": "https://fra.download.datapacket.com/100mb.bin",
-    "gb": "https://lon.download.datapacket.com/100mb.bin",
-    "uk": "https://lon.download.datapacket.com/100mb.bin",
-    "fr": "https://par.download.datapacket.com/100mb.bin",
-    "se": "https://sto.download.datapacket.com/100mb.bin",
-    "no": "https://osl.download.datapacket.com/100mb.bin",
-    "dk": "https://sto.download.datapacket.com/100mb.bin",
-    "fi": "https://sto.download.datapacket.com/100mb.bin",
-    "at": "https://fra.download.datapacket.com/100mb.bin",
-    "ch": "https://fra.download.datapacket.com/100mb.bin",
-    "be": "https://ams.download.datapacket.com/100mb.bin",
-    "lu": "https://fra.download.datapacket.com/100mb.bin",
-    "pl": "https://ber.download.datapacket.com/100mb.bin",
-    "cz": "https://ber.download.datapacket.com/100mb.bin",
-    "ie": "https://lon.download.datapacket.com/100mb.bin",
-    "ru": "https://speedtest.selectel.ru/100MB",
-    "us": "https://ams.download.datapacket.com/100mb.bin",
-}
-_DEFAULT_SPEED_URL = "https://fra.download.datapacket.com/100mb.bin"
-
-
 def _get_speed_url(country_code: str) -> str:
-    """Возвращает URL тестового файла для страны сервера."""
-    return _GEO_SPEED_URLS.get(country_code.lower(), _DEFAULT_SPEED_URL)
+    """Возвращает URL тестового файла по стране сервера с явным fallback."""
+    return SPEED_TEST_URLS_BY_COUNTRY.get(country_code.lower(), SPEED_TEST_DEFAULT_URL)
 
 
 class SpeedTestWorker(QThread):

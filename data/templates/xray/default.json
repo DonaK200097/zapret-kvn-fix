@@ -60,6 +60,17 @@
     "rules": [
       {
         "type": "field",
+        "domain": [
+          "regexp:(^|\\.)facebook\\.com$",
+          "regexp:(^|\\.)instagram\\.com$",
+          "full:ntc.party",
+          "full:rutracker.org"
+        ],
+        "network": "tcp,udp",
+        "outboundTag": "proxy"
+      },
+      {
+        "type": "field",
         "process": [
           "chrome",
           "firefox",

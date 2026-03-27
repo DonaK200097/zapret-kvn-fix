@@ -45,7 +45,27 @@ SINGBOX_PATH_DEFAULT = BASE_DIR / "core" / "sing-box.exe"
 SINGBOX_CLASH_API_PORT = 19090
 SINGBOX_XRAY_RELAY_PORT = 11808
 
-SPEED_TEST_URL = "https://speedtest.selectel.ru/100MB"
+SPEED_TEST_URLS_BY_COUNTRY: dict[str, str] = {
+    "nl": "https://ams.download.datapacket.com/100mb.bin",
+    "de": "https://fra.download.datapacket.com/100mb.bin",
+    "gb": "https://lon.download.datapacket.com/100mb.bin",
+    "uk": "https://lon.download.datapacket.com/100mb.bin",
+    "fr": "https://par.download.datapacket.com/100mb.bin",
+    "se": "https://sto.download.datapacket.com/100mb.bin",
+    "no": "https://osl.download.datapacket.com/100mb.bin",
+    "dk": "https://sto.download.datapacket.com/100mb.bin",
+    "fi": "https://sto.download.datapacket.com/100mb.bin",
+    "at": "https://fra.download.datapacket.com/100mb.bin",
+    "ch": "https://fra.download.datapacket.com/100mb.bin",
+    "be": "https://ams.download.datapacket.com/100mb.bin",
+    "lu": "https://fra.download.datapacket.com/100mb.bin",
+    "pl": "https://ber.download.datapacket.com/100mb.bin",
+    "cz": "https://ber.download.datapacket.com/100mb.bin",
+    "ie": "https://lon.download.datapacket.com/100mb.bin",
+    "ru": "https://speedtest.selectel.ru/100MB",
+    "us": "https://ams.download.datapacket.com/100mb.bin",
+}
+SPEED_TEST_DEFAULT_URL = "https://fra.download.datapacket.com/100mb.bin"
 SPEED_TEST_TIMEOUT = 20  # seconds per single measurement
 SPEED_TEST_ROUNDS = 3    # number of measurements per node (best avg of N-1)
 SPEED_TEST_TEMP_SOCKS_PORT = 19100

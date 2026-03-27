@@ -34,6 +34,17 @@
     "auto_detect_interface": true,
     "rules": [
       {
+        "domain": [
+          "ntc.party",
+          "rutracker.org"
+        ],
+        "domain_regex": [
+          "(^|\\.)facebook\\.com$",
+          "(^|\\.)instagram\\.com$"
+        ],
+        "outbound": "proxy"
+      },
+      {
         "process_name": [
           "chrome.exe",
           "firefox.exe",
