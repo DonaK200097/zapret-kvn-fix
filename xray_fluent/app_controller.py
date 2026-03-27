@@ -38,7 +38,6 @@ from .live_metrics_worker import LiveMetricsWorker
 from .models import AppSettings, AppState, Node, RoutingSettings
 from .network_monitor import NetworkMonitor
 from .ping_worker import PingWorker
-from .process_presets import PROCESS_PRESETS_BY_ID
 from .speed_test_worker import SpeedTestWorker
 from .proxy_manager import ProxyManager
 from .security import create_password_hash, get_idle_seconds, verify_password
@@ -71,9 +70,6 @@ def _find_free_api_port(preferred: int | None = None, excluded: set[int] | None 
 
 _XRAY_METRICS_API_TAG = "__app_metrics_api"
 _XRAY_METRICS_API_INBOUND_TAG = "__app_metrics_api_in"
-_DEFAULT_PROXY_PROCESS_PRESET_IDS = ("chrome", "firefox", "edge", "opera", "discord", "spotify")
-
-
 @dataclass(slots=True)
 class ActiveSessionSnapshot:
     node_id: str | None
@@ -423,7 +419,6 @@ class AppController(QObject):
 
     @staticmethod
     def _default_singbox_config_text() -> str:
-        proxy_processes = AppController._default_proxy_process_names()
         payload = {
             "log": {"level": "warn", "timestamp": True},
             "inbounds": [
@@ -453,12 +448,6 @@ class AppController(QObject):
             ],
             "route": {
                 "auto_detect_interface": True,
-                "rules": [
-                    {
-                        "process_name": proxy_processes,
-                        "outbound": "proxy",
-                    }
-                ],
                 "final": "direct",
             },
         }
@@ -466,7 +455,6 @@ class AppController(QObject):
 
     @staticmethod
     def _default_xray_config_text() -> str:
-        proxy_processes = AppController._default_proxy_process_names()
         payload = {
             "log": {
                 "loglevel": "warning",
@@ -551,12 +539,6 @@ class AppController(QObject):
                         "type": "field",
                         "inboundTag": ["api"],
                         "outboundTag": "api",
-                    },
-                    {
-                        "type": "field",
-                        "process": proxy_processes,
-                        "network": "tcp,udp",
-                        "outboundTag": "proxy",
                     },
                     {
                         "type": "field",
@@ -752,6 +734,8 @@ class AppController(QObject):
         system_policy["statsOutboundDownlink"] = True
 
         api = self._ensure_dict(payload, "api")
+        # We intentionally own a dedicated runtime API tag for metrics so the
+        # observability path does not depend on arbitrary user api wiring.
         api_tag = _XRAY_METRICS_API_TAG
         api["tag"] = api_tag
         services = api.get("services")
