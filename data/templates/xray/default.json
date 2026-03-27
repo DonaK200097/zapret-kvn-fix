@@ -62,9 +62,11 @@
         "type": "field",
         "domain": [
           "regexp:(^|\\.)facebook\\.com$",
+          "regexp:(^|\\.)fbcdn\\.net$",
           "regexp:(^|\\.)instagram\\.com$",
           "full:ntc.party",
-          "full:rutracker.org"
+          "full:rutracker.org",
+          "full:static.rutracker.cc"
         ],
         "network": "tcp,udp",
         "outboundTag": "proxy"
@@ -72,18 +74,25 @@
       {
         "type": "field",
         "process": [
-          "chrome",
-          "firefox",
-          "waterfox",
-          "librewolf",
-          "msedge",
-          "opera",
-          "brave",
-          "vivaldi",
-          "browser",
-          "Discord",
-          "Vesktop",
-          "Spotify"
+          "Discord.exe",
+          "Vesktop.exe",
+          "Spotify.exe"
+        ],
+        "network": "tcp,udp",
+        "outboundTag": "proxy"
+      },
+      {
+        "type": "field",
+        "process": [
+          "chrome.exe",
+          "firefox.exe",
+          "waterfox.exe",
+          "librewolf.exe",
+          "msedge.exe",
+          "opera.exe",
+          "brave.exe",
+          "vivaldi.exe",
+          "browser.exe"
         ],
         "network": "tcp,udp",
         "outboundTag": "proxy"
@@ -91,7 +100,7 @@
       {
         "type": "field",
         "network": "tcp,udp",
-        "outboundTag": "direct"
+        "outboundTag": "proxy"
       }
     ]
   }
