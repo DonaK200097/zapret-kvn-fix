@@ -868,7 +868,16 @@ class AppController(QObject):
         return self.validate_json_text(text)
 
     def validate_xray_json_text(self, text: str) -> tuple[bool, str]:
-        return self.validate_json_text(text)
+        ok, message = self.validate_json_text(text)
+        if not ok:
+            return False, message
+        if "fakedns" in text.lower():
+            return (
+                True,
+                "JSON корректен. Внимание: в конфиге есть FakeDNS; некоторые версии Xray-core могут падать на старте. "
+                "Если запуск завершается с panic, отключите FakeDNS или обновите Xray core.",
+            )
+        return True, message
 
     def apply_singbox_config_text(self, text: str) -> tuple[bool, Path | None, str]:
         ok, message = self.validate_json_text(text)

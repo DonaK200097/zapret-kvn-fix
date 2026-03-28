@@ -363,7 +363,10 @@ class XrayManager(QObject):
         startup: bool,
     ) -> str:
         stage = "во время запуска" if startup else "неожиданно"
-        detail = self._last_output_lines[-1].strip() if self._last_output_lines else ""
+        diagnostic = self._diagnose_output_failure(stage)
+        if diagnostic:
+            return diagnostic
+        detail = self._best_output_detail()
         if detail:
             return f"Xray завершился {stage}: {detail}"
         if exit_code is None:
@@ -376,6 +379,38 @@ class XrayManager(QObject):
             return
         self._startup_failure_reported = True
         self.error.emit(message)
+
+    def _best_output_detail(self) -> str:
+        if not self._last_output_lines:
+            return ""
+        preferred_markers = ("panic:", "[xray-error]", "error", "failed", "invalid", "not found")
+        for line in reversed(self._last_output_lines):
+            clean = line.strip()
+            lower = clean.lower()
+            if any(marker in lower for marker in preferred_markers):
+                return clean
+        for line in reversed(self._last_output_lines):
+            clean = line.strip()
+            lower = clean.lower()
+            if not clean:
+                continue
+            if clean.startswith("github.com/") or lower.startswith("goroutine ") or lower.startswith("[signal"):
+                continue
+            return clean
+        return self._last_output_lines[-1].strip()
+
+    def _diagnose_output_failure(self, stage: str) -> str | None:
+        if not self._last_output_lines:
+            return None
+        joined = "\n".join(self._last_output_lines).lower()
+        if "fakednspostprocessingstage" not in joined and "fakedns" not in joined:
+            return None
+        if "panic:" not in joined and "nil pointer dereference" not in joined:
+            return None
+        return (
+            f"Xray завершился {stage}: текущий Xray core упал на секции FakeDNS в конфиге. "
+            "Отключите FakeDNS в Xray JSON, сбросьте конфиг на шаблон по умолчанию или обновите Xray core."
+        )
 
 
 def get_xray_version(xray_path: str) -> str | None:

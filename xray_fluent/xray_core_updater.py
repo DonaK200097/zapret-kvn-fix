@@ -265,40 +265,42 @@ def _install_zip_archive(archive_path: Path, target_xray_path: Path) -> None:
 
         backup_dir = temp_dir / "_install_backup"
         backup_dir.mkdir(parents=True, exist_ok=True)
-        staged_targets: list[tuple[Path, Path, Path | None]] = []
+        with tempfile.TemporaryDirectory(prefix=".xray_install_", dir=target_dir) as stage_dir_str:
+            stage_dir = Path(stage_dir_str)
+            staged_targets: list[tuple[Path, Path, Path | None]] = []
 
-        temp_target = target_xray_path.with_suffix(".exe.new")
-        shutil.copy2(new_xray, temp_target)
-        backup_copy: Path | None = None
-        if target_xray_path.exists():
-            backup_copy = backup_dir / target_xray_path.name
-            shutil.copy2(target_xray_path, backup_copy)
-        staged_targets.append((target_xray_path, temp_target, backup_copy))
+            staged_xray = stage_dir / target_xray_path.name
+            shutil.copy2(new_xray, staged_xray)
+            backup_copy: Path | None = None
+            if target_xray_path.exists():
+                backup_copy = backup_dir / target_xray_path.name
+                shutil.copy2(target_xray_path, backup_copy)
+            staged_targets.append((target_xray_path, staged_xray, backup_copy))
 
-        for optional_name in ("geoip.dat", "geosite.dat", "wintun.dll"):
-            src = _find_file(temp_dir, optional_name)
-            if src:
-                dest = target_dir / optional_name
-                staged = temp_dir / f"{optional_name}.new"
-                shutil.copy2(src, staged)
-                backup_copy = None
-                if dest.exists():
-                    backup_copy = backup_dir / optional_name
-                    shutil.copy2(dest, backup_copy)
-                staged_targets.append((dest, staged, backup_copy))
+            for optional_name in ("geoip.dat", "geosite.dat", "wintun.dll"):
+                src = _find_file(temp_dir, optional_name)
+                if src:
+                    dest = target_dir / optional_name
+                    staged = stage_dir / optional_name
+                    shutil.copy2(src, staged)
+                    backup_copy = None
+                    if dest.exists():
+                        backup_copy = backup_dir / optional_name
+                        shutil.copy2(dest, backup_copy)
+                    staged_targets.append((dest, staged, backup_copy))
 
-        replaced_targets: list[tuple[Path, Path | None]] = []
-        try:
-            for dest, staged, backup_copy in staged_targets:
-                staged.replace(dest)
-                replaced_targets.append((dest, backup_copy))
-        except Exception:
-            for dest, backup_copy in reversed(replaced_targets):
-                if backup_copy is not None:
-                    shutil.copy2(backup_copy, dest)
-                elif dest.exists():
-                    dest.unlink()
-            raise
+            replaced_targets: list[tuple[Path, Path | None]] = []
+            try:
+                for dest, staged, backup_copy in staged_targets:
+                    staged.replace(dest)
+                    replaced_targets.append((dest, backup_copy))
+            except Exception:
+                for dest, backup_copy in reversed(replaced_targets):
+                    if backup_copy is not None:
+                        shutil.copy2(backup_copy, dest)
+                    elif dest.exists():
+                        dest.unlink()
+                raise
 
         original_xray = staged_targets[0][2]
         if original_xray is not None:

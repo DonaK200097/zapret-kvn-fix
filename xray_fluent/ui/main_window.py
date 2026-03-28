@@ -650,7 +650,10 @@ class MainWindow(FluentWindow):
         self._show_status("success", f"Сохранено: {path.name}")
 
     def _validate_core_config(self, core: str, text: str) -> None:
-        ok, message = self.controller.validate_json_text(text)
+        if core == "singbox":
+            ok, message = self.controller.validate_singbox_json_text(text)
+        else:
+            ok, message = self.controller.validate_xray_json_text(text)
         self.configs_page.set_status(core, "success" if ok else "error", message)
         if ok:
             self._show_status("success", "JSON корректен")
