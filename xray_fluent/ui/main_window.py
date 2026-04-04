@@ -51,6 +51,8 @@ class MainWindow(FluentWindow):
         self._deferred_process_stats: list | None = None
         self._has_deferred_process_stats = False
         self._geometry_persistence_ready = False
+        self._zapret_autostart_done = False
+        self._zapret_autostart_scheduled = False
         self.tray: QSystemTrayIcon | None = None
         self.tray_show_action: QAction | None = None
         self.tray_connect_action: QAction | None = None
@@ -207,6 +209,7 @@ class MainWindow(FluentWindow):
 
         self.zapret_page.start_requested.connect(self._on_zapret_start)
         self.zapret_page.stop_requested.connect(self._on_zapret_stop)
+        self.zapret_page.autostart_changed.connect(self._on_zapret_autostart_changed)
         self.controller.zapret.started.connect(self._on_zapret_started)
         self.controller.zapret.stopped.connect(self._on_zapret_stopped)
         self.controller.zapret.error.connect(self._on_zapret_error)
@@ -718,9 +721,46 @@ class MainWindow(FluentWindow):
         infos = ZapretManager.list_preset_infos()
         saved = self.controller.state.settings.zapret_preset
         self.zapret_page.set_presets(infos, saved)
-        if self.controller.state.settings.zapret_autostart and saved:
-            if any(p.name == saved for p in infos):
-                QTimer.singleShot(1000, lambda: self._on_zapret_start(saved))
+        self.zapret_page.set_autostart(self.controller.state.settings.zapret_autostart)
+        self._schedule_zapret_autostart()
+
+    def _schedule_zapret_autostart(self, delay_ms: int = 0) -> None:
+        if self._zapret_autostart_done or self._zapret_autostart_scheduled:
+            return
+        self._zapret_autostart_scheduled = True
+        QTimer.singleShot(delay_ms, self._try_autostart_zapret)
+
+    def _try_autostart_zapret(self) -> None:
+        from ..zapret_manager import ZapretManager
+
+        self._zapret_autostart_scheduled = False
+        if self._zapret_autostart_done:
+            return
+
+        settings = self.controller.state.settings
+        saved = settings.zapret_preset.strip()
+
+        if not settings.zapret_autostart or not saved:
+            self._zapret_autostart_done = True
+            return
+
+        if self.controller.zapret.running:
+            self._zapret_autostart_done = True
+            return
+
+        infos = list(self.zapret_page._presets) or ZapretManager.list_preset_infos()
+        if not infos:
+            self._schedule_zapret_autostart(300)
+            return
+
+        self.zapret_page.set_presets(infos, saved)
+        preset = next((info for info in infos if info.name == saved), None)
+        if preset is None:
+            self._zapret_autostart_done = True
+            return
+
+        self._zapret_autostart_done = True
+        self._on_zapret_start(preset.name)
 
     def _on_zapret_start(self, preset_name: str) -> None:
         self.controller.state.settings.zapret_preset = preset_name
@@ -729,6 +769,10 @@ class MainWindow(FluentWindow):
 
     def _on_zapret_stop(self) -> None:
         self.controller.zapret.stop()
+
+    def _on_zapret_autostart_changed(self, enabled: bool) -> None:
+        self.controller.state.settings.zapret_autostart = enabled
+        self.controller.save()
 
     def _on_zapret_started(self) -> None:
         active = self.controller.state.settings.zapret_preset

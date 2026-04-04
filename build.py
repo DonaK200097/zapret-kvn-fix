@@ -79,8 +79,8 @@ def ensure_venv() -> None:
         return
     _print("Creating virtual environment ...")
     _run([sys.executable, "-m", "venv", str(VENV_DIR)])
-    _run([str(VENV_PIP), "install", "--upgrade", "pip"])
-    _run([str(VENV_PIP), "install", "-r", str(ROOT / "requirements.txt")])
+    _run([str(VENV_PYTHON), "-m", "pip", "install", "--upgrade", "pip"])
+    _run([str(VENV_PYTHON), "-m", "pip", "install", "-r", str(ROOT / "requirements.txt")])
 
 
 def clean() -> None:
@@ -150,8 +150,11 @@ def build_exe() -> None:
 
     # Copy core/ into dist (merge, skip locked files like running xray.exe)
     dst_core = APP_DIR / "core"
-    _print(f"Merging core -> {dst_core}")
-    _copy_tree_merge(CORE_DIR, dst_core)
+    if CORE_DIR.is_dir():
+        _print(f"Merging core -> {dst_core}")
+        _copy_tree_merge(CORE_DIR, dst_core)
+    else:
+        _print(f"Skipping missing core dir: {CORE_DIR}")
 
     # Copy zapret/ into dist (merge, skip locked files)
     dst_zapret = APP_DIR / "zapret"
