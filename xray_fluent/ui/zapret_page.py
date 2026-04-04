@@ -22,6 +22,7 @@ from qfluentwidgets import (
     TableWidget,
     TransparentToolButton,
     VerticalSeparator,
+    SwitchSettingCard,
 )
 from qfluentwidgets import RoundMenu, Action
 
@@ -32,6 +33,7 @@ from .preset_edit_widget import PresetEditWidget
 class ZapretPage(QWidget):
     start_requested = pyqtSignal(str)   # preset name
     stop_requested = pyqtSignal()
+    autostart_changed = pyqtSignal(bool)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -70,6 +72,20 @@ class ZapretPage(QWidget):
             info_card,
         ))
         root.addWidget(info_card)
+
+        # Autostart card
+        autostart_card = CardWidget(list_page)
+        autostart_lay = QVBoxLayout(autostart_card)
+        autostart_lay.setContentsMargins(12, 10, 12, 10)
+        autostart_lay.setSpacing(0)
+        self.autostart_switch = SwitchSettingCard(
+            FIF.COMMAND_PROMPT,
+            "Автозапуск Zapret",
+            "Запускать последний выбранный пресет при старте приложения",
+            parent=autostart_card,
+        )
+        autostart_lay.addWidget(self.autostart_switch)
+        root.addWidget(autostart_card)
 
         # Toolbar
         toolbar = QHBoxLayout()
@@ -154,12 +170,16 @@ class ZapretPage(QWidget):
         self.table.customContextMenuRequested.connect(self._on_context_menu)
         self._editor.back_requested.connect(self._show_list)
         self._editor.save_requested.connect(self._on_save_preset)
+        self.autostart_switch.checkedChanged.connect(self.autostart_changed)
 
     # ── Public API ──
 
     def set_presets(self, infos: list[PresetInfo], selected: str = "") -> None:
         self._presets = list(infos)
         self._reload_table(selected)
+
+    def set_autostart(self, enabled: bool) -> None:
+        self.autostart_switch.setChecked(enabled)
 
     def set_running(self, running: bool, preset_name: str = "") -> None:
         self._running = running
