@@ -105,7 +105,7 @@ jobs:
         shell: pwsh
         run: |
           python -m PyInstaller main.py `
-            --name ZapretKVN `
+            --name ZapretRe-KVN `
             --noconfirm --clean --console --onedir `
             --uac-admin `
             --manifest uac_admin.manifest `
@@ -114,27 +114,27 @@ jobs:
             --hidden-import win32comext.shell.shellcon `
             --hidden-import encodings.idna
 
-          Copy-Item -Recurse core dist/ZapretKVN/core
+          Copy-Item -Recurse core dist/ZapretRe-KVN/core
 
           # Copy zapret/ (presets, binaries, lists — tracked in git)
           if (Test-Path zapret) {
-            Copy-Item -Recurse zapret dist/ZapretKVN/zapret
+            Copy-Item -Recurse zapret dist/ZapretRe-KVN/zapret
           }
 
           # Copy raw config templates for first-run users
           if (Test-Path data/templates) {
-            New-Item -ItemType Directory -Force -Path dist/ZapretKVN/data | Out-Null
-            Copy-Item -Recurse data/templates dist/ZapretKVN/data/templates
+            New-Item -ItemType Directory -Force -Path dist/ZapretRe-KVN/data | Out-Null
+            Copy-Item -Recurse data/templates dist/ZapretRe-KVN/data/templates
           }
 
           Write-Host "Build complete:"
-          Get-ChildItem dist/ZapretKVN/ | Format-Table Name, Length
+          Get-ChildItem dist/ZapretRe-KVN/ | Format-Table Name, Length
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ZapretKVN-portable
-          path: dist/ZapretKVN/
+          name: ZapretRe-KVN-portable
+          path: dist/ZapretRe-KVN/
 
       # ── Release on push to main ──
 
@@ -142,20 +142,20 @@ jobs:
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'
         shell: pwsh
         run: |
-          cd dist/ZapretKVN
+          cd dist/ZapretRe-KVN
 
           # Self-extracting exe for manual install
-          7z a -t7z -mx=5 -sfx "../ZapretKVN-v$env:VERSION-windows-x64.exe" *
+          7z a -t7z -mx=5 -sfx "../ZapretRe-KVN-v$env:VERSION-windows-x64.exe" *
 
           # Zip for auto-updater
-          7z a -tzip -mx=5 "../ZapretKVN-v$env:VERSION-windows-x64.zip" *
+          7z a -tzip -mx=5 "../ZapretRe-KVN-v$env:VERSION-windows-x64.zip" *
 
-          $zipPath = "../ZapretKVN-v$env:VERSION-windows-x64.zip"
+          $zipPath = "../ZapretRe-KVN-v$env:VERSION-windows-x64.zip"
           $zipHash = (Get-FileHash $zipPath -Algorithm SHA256).Hash.ToLower()
           Set-Content "$zipPath.sha256" -Value $zipHash -Encoding ASCII
 
           # 7z archive
-          7z a -t7z -mx=5 "../ZapretKVN-v$env:VERSION-windows-x64.7z" *
+          7z a -t7z -mx=5 "../ZapretRe-KVN-v$env:VERSION-windows-x64.7z" *
 
           cd ..
           Write-Host "Release archives:"
@@ -170,10 +170,10 @@ jobs:
           generate_release_notes: true
           make_latest: true
           files: |
-            dist/ZapretKVN-*-windows-x64.exe
-            dist/ZapretKVN-*-windows-x64.zip
-            dist/ZapretKVN-*-windows-x64.7z
-            dist/ZapretKVN-*-windows-x64.zip.sha256
+            dist/ZapretRe-KVN-*-windows-x64.exe
+            dist/ZapretRe-KVN-*-windows-x64.zip
+            dist/ZapretRe-KVN-*-windows-x64.7z
+            dist/ZapretRe-KVN-*-windows-x64.zip.sha256
 
       - name: Commit version bump
         if: github.ref == 'refs/heads/main' && github.event_name == 'push'

@@ -2,14 +2,12 @@ from __future__ import annotations
 
 import webbrowser
 
-from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 from qfluentwidgets import (
     BodyLabel,
     CaptionLabel,
     FluentIcon as FIF,
     PrimaryPushButton,
-    PushButton,
     SubtitleLabel,
     TitleLabel,
 )
@@ -27,7 +25,7 @@ class AboutPage(QWidget):
         root.setSpacing(16)
 
         # ── Title ──
-        title = TitleLabel("Zapret KVN", self)
+        title = TitleLabel("Zapret Re-KVN", self)
         root.addWidget(title)
 
         version = CaptionLabel(f"v{APP_VERSION}", self)
@@ -42,7 +40,7 @@ class AboutPage(QWidget):
 
         # ── Description ──
         desc1 = BodyLabel(
-            "Zapret KVN — уникальный туннель до любой страны мира, "
+            "Zapret Re-KVN — уникальный туннель до любой страны мира, "
             "созданный передовыми мировыми инженерами "
             "(не является тем чем вы думаете).",
             self,
@@ -79,24 +77,13 @@ class AboutPage(QWidget):
         btn_row = QHBoxLayout()
         btn_row.setSpacing(12)
 
-        tg_channel_btn = PrimaryPushButton(FIF.SEND, "Telegram канал", self)
-        tg_channel_btn.clicked.connect(
-            lambda: webbrowser.open("https://t.me/vpndiscordyooutube")
+        github_btn = PrimaryPushButton(FIF.GITHUB, "GitHub", self)
+        github_btn.clicked.connect(
+            lambda: webbrowser.open("https://github.com/DonaK200097/zapret-kvn-fix")
         )
-        btn_row.addWidget(tg_channel_btn)
-
-        tg_bot_btn = PushButton(FIF.SHOPPING_CART, "Купить подписку", self)
-        tg_bot_btn.clicked.connect(
-            lambda: webbrowser.open("https://t.me/zapretvpns_bot")
-        )
-        btn_row.addWidget(tg_bot_btn)
+        btn_row.addWidget(github_btn)
 
         btn_row.addStretch()
         root.addLayout(btn_row)
-
-        # ── Footer ──
-        footer = CaptionLabel("Подробнее здесь @zapretvpns_bot", self)
-        footer.setStyleSheet("color: #888; margin-top: 12px;")
-        root.addWidget(footer)
 
         root.addStretch()
