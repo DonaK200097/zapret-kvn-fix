@@ -4,12 +4,7 @@
 
 <img width="200" alt="image" src="https://github.com/user-attachments/assets/089ae538-686f-4b6d-94f6-c0ff56bd3664" /><img width="200" alt="image" src="https://github.com/user-attachments/assets/f144c777-d60c-440b-bc29-39285d588ac6" /><img width="200" alt="image" src="https://github.com/user-attachments/assets/f97650a0-d83c-4b49-9809-16c2d69f314c" />
 
-
-
-> [!WARNING]
-> Первая бета-версия. Некоторый функционал может работать некорректно.
-> 
-> Сообщить о проблеме рекомендуем ТОЛЬКО сюда: [Issues](https://github.com/youtubediscord/zapret-kvn/issues)
+## Оригинальный проект - https://github.com/youtubediscord/zapret-kvn
 
 
 ## Что это
@@ -84,16 +79,3 @@ Zapret KVN объединяет несколько проверенных инс
 2. Откройте программу → перейдите на страницу **Серверы**
 3. Нажмите **Ctrl+V** — сервер добавится автоматически
 4. Нажмите кнопку подключения на панели управления
-
-## Где взять ключ
-
-Если у вас нет VPN-ключа, получите его в боте: [@zapretvpns_bot](https://t.me/zapretvpns_bot)
-
-## Обратная связь
-
-- [Telegram-канал](https://t.me/vpndiscordyooutube) — новости и обновления
-- [Сообщить о проблеме](https://github.com/youtubediscord/zapret-kvn/issues)
-
-## Лицензия
-
-MIT
