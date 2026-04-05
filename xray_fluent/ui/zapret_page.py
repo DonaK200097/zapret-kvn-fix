@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import cast
 
-from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtCore import Qt, QSignalBlocker, pyqtSignal
 from PyQt6.QtGui import QBrush, QColor, QCursor
 from PyQt6.QtWidgets import (
     QAbstractItemView, QFileDialog, QHBoxLayout, QHeaderView,
@@ -170,7 +170,7 @@ class ZapretPage(QWidget):
         self.table.customContextMenuRequested.connect(self._on_context_menu)
         self._editor.back_requested.connect(self._show_list)
         self._editor.save_requested.connect(self._on_save_preset)
-        self.autostart_switch.checkedChanged.connect(self.autostart_changed)
+        self.autostart_switch.checkedChanged.connect(self.autostart_changed.emit)
 
     # ── Public API ──
 
@@ -179,7 +179,9 @@ class ZapretPage(QWidget):
         self._reload_table(selected)
 
     def set_autostart(self, enabled: bool) -> None:
+        blocker = QSignalBlocker(self.autostart_switch)
         self.autostart_switch.setChecked(enabled)
+        del blocker
 
     def set_running(self, running: bool, preset_name: str = "") -> None:
         self._running = running
