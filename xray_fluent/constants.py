@@ -4,8 +4,8 @@ from pathlib import Path
 import sys
 
 
-APP_NAME = "zapret kvn"
-APP_VERSION = "0.5.1"
+APP_NAME = "Zapret Re-KVN"
+APP_VERSION = "0.5.3"
 STATE_SCHEMA_VERSION = 1
 
 PROXY_HOST = "127.0.0.1"

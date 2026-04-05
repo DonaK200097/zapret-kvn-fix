@@ -252,7 +252,7 @@ def _enforce_frozen() -> None:
         raise SystemExit(
             "ОШИБКА: Прямой запуск не поддерживается.\n"
             "Сначала соберите приложение:  python build.py\n"
-            "Затем запустите:              dist\\ZapretKVN\\ZapretKVN.exe"
+            "Затем запустите:              dist\\ZapretRe-KVN\\ZapretRe-KVN.exe"
         )
 
 

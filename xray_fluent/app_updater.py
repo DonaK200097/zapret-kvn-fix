@@ -25,7 +25,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 from .constants import APP_VERSION, BASE_DIR
 
-GITHUB_REPO = "youtubediscord/zapret-kvn"
+GITHUB_REPO = "DonaK200097/zapret-kvn-fix"
 GITHUB_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 USER_AGENT = f"ZapretKVN/{APP_VERSION}"
 
@@ -442,10 +442,10 @@ class UpdateDownloader(QThread):
             with zipfile.ZipFile(zip_path, "r") as zf:
                 zf.extractall(extract_dir)
 
-            exe_name = "ZapretKVN.exe"
+            exe_name = "ZapretRe-KVN.exe"
             source_dir = _resolve_extracted_app_dir(extract_dir, exe_name)
             if not (source_dir / exe_name).is_file():
-                self.error.emit("Архив обновления не содержит ZapretKVN.exe")
+                self.error.emit("Архив обновления не содержит ZapretRe-KVN.exe")
                 shutil.rmtree(tmp_dir, ignore_errors=True)
                 return
 

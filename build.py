@@ -22,7 +22,7 @@ VENV_DIR = ROOT / ".venv"
 VENV_PYTHON = VENV_DIR / "Scripts" / "python.exe"
 VENV_PIP = VENV_DIR / "Scripts" / "pip.exe"
 
-APP_NAME = "ZapretKVN"
+APP_NAME = "ZapretRe-KVN"
 
 DIST_DIR = ROOT / "dist"
 BUILD_DIR = ROOT / "build"
