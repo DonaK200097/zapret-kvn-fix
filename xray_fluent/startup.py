@@ -83,6 +83,8 @@ def set_startup_enabled(app_name: str, enabled: bool, command: str) -> None:
             task_name,
             "/SC",
             "ONLOGON",
+            "/DELAY",
+            "0000:15",
             "/RL",
             "HIGHEST",
             "/TR",
