@@ -6,19 +6,19 @@ import hashlib
 import json
 import secrets
 import socket
-import string
 from pathlib import Path
 from typing import Any
 
-from .constants import (
+from ...application.runtime_security import generate_local_proxy_credentials, strip_singbox_proxy_inbounds
+from ...constants import (
     PROXY_HOST,
     SINGBOX_CLASH_API_PORT,
     SINGBOX_XRAY_RELAY_PORT,
     SS_PROTECT_PORT_END,
     SS_PROTECT_PORT_START,
 )
-from .models import Node
-from .singbox_config_builder import build_singbox_outbound
+from ...models import Node
+from .config_builder import build_singbox_outbound
 
 
 _SS_PROTECT_METHOD = "chacha20-ietf-poly1305"
@@ -33,6 +33,8 @@ class SingboxDocumentState:
     text: str
     text_hash: str
     has_proxy_outbound: bool
+    file_mtime_ns: int = 0
+    file_size: int = 0
 
 
 @dataclass(slots=True)
@@ -47,6 +49,8 @@ class ParsedSingboxDocument:
 @dataclass(slots=True)
 class SingboxXraySidecarPlan:
     relay_port: int
+    relay_username: str
+    relay_password: str
     protect_port: int
     protect_password: str
     config: dict[str, Any]
@@ -85,19 +89,20 @@ def inspect_singbox_document_text(source_path: Path, text: str) -> SingboxDocume
 
 
 def parse_singbox_document(source_path: Path, text: str) -> ParsedSingboxDocument:
-    state = inspect_singbox_document_text(source_path, text)
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
         raise ValueError(f"{source_path.name}: {_format_json_error_message(text, exc)}") from exc
     if not isinstance(payload, dict):
         raise ValueError("Корень sing-box config должен быть JSON-объектом.")
+    text_hash = hashlib.sha256(text.encode("utf-8")).hexdigest()
+    has_proxy_outbound = _config_has_proxy_outbound(payload)
     return ParsedSingboxDocument(
         source_path=source_path,
         text=text,
-        text_hash=state.text_hash,
+        text_hash=text_hash,
         payload=payload,
-        has_proxy_outbound=state.has_proxy_outbound,
+        has_proxy_outbound=has_proxy_outbound,
     )
 
 
@@ -120,6 +125,7 @@ def plan_singbox_runtime(
     preferred_protect_password: str = "",
 ) -> SingboxRuntimePlan:
     runtime_config = deepcopy(document.payload)
+    strip_singbox_proxy_inbounds(runtime_config)
     _ensure_singbox_metrics_contract(runtime_config)
     _ensure_singbox_tun_runtime_contract(runtime_config)
 
@@ -183,6 +189,7 @@ def _plan_hybrid_runtime(
         excluded=excluded_ports,
     )
     protect_password = preferred_protect_password or _generate_ss_password()
+    relay_username, relay_password = generate_local_proxy_credentials(prefix="sidecar")
 
     outbounds = runtime_config.setdefault("outbounds", [])
     assert isinstance(outbounds, list)
@@ -191,6 +198,8 @@ def _plan_hybrid_runtime(
         "tag": "proxy",
         "server": PROXY_HOST,
         "server_port": relay_port,
+        "username": relay_username,
+        "password": relay_password,
         # Keep the relay on loopback so sing-box does not bind it to the
         # physical adapter via auto-detect rules.
         "inet4_bind_address": PROXY_HOST,
@@ -212,11 +221,15 @@ def _plan_hybrid_runtime(
 
     sidecar = SingboxXraySidecarPlan(
         relay_port=relay_port,
+        relay_username=relay_username,
+        relay_password=relay_password,
         protect_port=protect_port,
         protect_password=protect_password,
         config=_build_xray_sidecar_config(
             node,
             relay_port=relay_port,
+            relay_username=relay_username,
+            relay_password=relay_password,
             protect_port=protect_port,
             protect_password=protect_password,
         ),
@@ -236,6 +249,8 @@ def _build_xray_sidecar_config(
     node: Node,
     *,
     relay_port: int,
+    relay_username: str,
+    relay_password: str,
     protect_port: int,
     protect_password: str,
 ) -> dict[str, Any]:
@@ -263,7 +278,11 @@ def _build_xray_sidecar_config(
                 "protocol": "socks",
                 "listen": PROXY_HOST,
                 "port": relay_port,
-                "settings": {"auth": "noauth", "udp": True},
+                "settings": {
+                    "auth": "password",
+                    "accounts": [{"user": relay_username, "pass": relay_password}],
+                    "udp": True,
+                },
                 "sniffing": {
                     "enabled": True,
                     "destOverride": ["http", "tls", "quic"],
@@ -407,8 +426,8 @@ def _find_free_port(
 
 
 def _generate_ss_password(length: int = 24) -> str:
-    alphabet = string.ascii_letters + string.digits
-    return "".join(secrets.choice(alphabet) for _ in range(length))
+    _, password = generate_local_proxy_credentials(prefix="protect", password_length=length)
+    return password
 
 
 def _generate_tun_interface_name() -> str:
