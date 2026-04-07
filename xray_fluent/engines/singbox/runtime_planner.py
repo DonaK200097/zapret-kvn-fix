@@ -3,6 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 import hashlib
+from ipaddress import ip_address
 import json
 import secrets
 import socket
@@ -160,6 +161,7 @@ def plan_singbox_runtime(
 
     assert isinstance(outbounds, list)
     outbounds[proxy_index] = native_proxy
+    _ensure_proxy_server_bootstrap_contract(runtime_config, native_proxy, node.server)
     return SingboxRuntimePlan(
         outcome="native_singbox",
         source_path=document.source_path,
@@ -318,6 +320,53 @@ def _build_xray_sidecar_config(
             ],
         },
     }
+
+
+def _is_domain_name(value: str) -> bool:
+    host = str(value or "").strip()
+    if not host:
+        return False
+    try:
+        ip_address(host)
+    except ValueError:
+        return True
+    return False
+
+
+def _ensure_proxy_server_bootstrap_contract(
+    payload: dict[str, Any],
+    proxy_outbound: dict[str, Any],
+    preferred_server: str,
+) -> None:
+    server = str(preferred_server or proxy_outbound.get("server") or "").strip()
+    if not _is_domain_name(server):
+        return
+
+    # Domain-based proxy servers must resolve through bootstrap-dns, otherwise
+    # proxy-dns can recurse into the proxy outbound before the tunnel is ready.
+    proxy_outbound["domain_resolver"] = "bootstrap-dns"
+
+    route = _ensure_dict(payload, "route")
+    rules = _ensure_list(route, "rules")
+    direct_rule = {"domain": [server], "action": "route", "outbound": "direct"}
+
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            continue
+        domain_value = rule.get("domain")
+        if isinstance(domain_value, list) and server in [str(item) for item in domain_value]:
+            rules[index] = direct_rule
+            return
+
+    insert_index = 0
+    for index, rule in enumerate(rules):
+        if not isinstance(rule, dict):
+            continue
+        if rule.get("action") == "sniff" or rule.get("protocol") == "dns":
+            insert_index = index + 1
+            continue
+        break
+    rules.insert(insert_index, direct_rule)
 
 
 def _ensure_hybrid_protect_route(payload: dict[str, Any]) -> None:
