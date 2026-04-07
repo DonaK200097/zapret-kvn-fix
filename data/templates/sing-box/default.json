@@ -40,7 +40,7 @@
         "tag": "geosite-category-ru",
         "format": "binary",
         "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geosite/geosite-category-ru.srs",
-        "download_detour": "proxy",
+        "download_detour": "direct",
         "update_interval": "24h"
       },
       {
@@ -48,7 +48,7 @@
         "tag": "geoip-ru",
         "format": "binary",
         "url": "https://raw.githubusercontent.com/runetfreedom/russia-v2ray-rules-dat/release/sing-box/rule-set-geoip/geoip-ru.srs",
-        "download_detour": "proxy",
+        "download_detour": "direct",
         "update_interval": "24h"
       }
     ],

@@ -53,9 +53,9 @@ def start_tun(
         controller._set_connection_status(
             "error",
             (
-                "Не удалось запустить sing-box hybrid runtime. Проверьте путь к Xray и наличие wintun.dll в core/."
+                "Не удалось запустить sing-box hybrid runtime. Смотрите причину в последних строках лога sing-box."
                 if plan.is_hybrid
-                else "Не удалось создать TUN адаптер. Проверьте наличие wintun.dll в core/."
+                else "Не удалось запустить sing-box TUN runtime. Смотрите причину в последних строках лога sing-box."
             ),
             level="error",
         )
@@ -101,9 +101,9 @@ def restart_runtime(controller: AppController, reason: str) -> bool:
             controller._set_connection_status(
                 "error",
                 (
-                    "Не удалось перезапустить sing-box hybrid runtime. Проверьте путь к Xray и наличие wintun.dll в core/."
+                    "Не удалось перезапустить sing-box hybrid runtime. Смотрите причину в последних строках лога sing-box."
                     if plan.is_hybrid
-                    else "Не удалось перезапустить sing-box runtime. Проверьте наличие wintun.dll в core/."
+                    else "Не удалось перезапустить sing-box runtime. Смотрите причину в последних строках лога sing-box."
                 ),
                 level="error",
             )
